@@ -14,9 +14,9 @@ on:
 
 jobs:
   build-and-upload:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
-      BUNDLE_ID: com.hulp.talentohulp
+      BUNDLE_ID: com.hulp.talento
       APPLE_TEAM_ID: 7D2MKM79GM
       APPSTORE_ISSUER_ID: 85e32ae7-0d36-4a53-8710-d4b9ed2e2bc5
       APPSTORE_API_KEY_ID: R65HQK7Q6S
@@ -32,6 +32,16 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
+          # App Store Connect rechaza binarios construidos con SDK < iOS 26.
+          # Sin este guard el build corre 9 minutos completos y recien muere en
+          # el upload con "Validation failed (409) SDK version issue".
+          IOS_SDK_MAJOR=$(xcodebuild -showsdks | sed -n 's/.*-sdk iphoneos\([0-9][0-9]*\).*/\1/p' | sort -n | tail -n 1)
+          echo "iOS SDK mayor disponible: ${IOS_SDK_MAJOR:-desconocido}"
+          if [ -z "$IOS_SDK_MAJOR" ] || [ "$IOS_SDK_MAJOR" -lt 26 ]; then
+            echo "::error::App Store Connect exige iOS SDK 26+ (Xcode 26+). Detectado: ${IOS_SDK_MAJOR:-ninguno}"
+            exit 1
+          fi
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -44,7 +54,8 @@ jobs:
 
       - name: Create environment file
         env:
-          ENVIRONMENT_JSON: ${{ secrets.ENVIRONMENT_JSON }}
+          # En el repo de Usuarios, ENVIRONMENT_JSON es el de esa app.
+          ENVIRONMENT_JSON: ${{ secrets.ENVIRONMENT_JSON_TALENTO || secrets.ENVIRONMENT_JSON }}
         run: |
           mkdir -p assets/environment_values
           echo "$ENVIRONMENT_JSON" > assets/environment_values/environment.json
@@ -56,7 +67,11 @@ jobs:
         env:
           IOS_DISTRIBUTION_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
           IOS_DISTRIBUTION_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          # Este workflow tambien corre en el repo de Hulp Usuarios, donde
+          # IOS_PROVISIONING_PROFILE_BASE64 es el perfil de com.hulp.hulp.
+          # Por eso se prefiere el secret especifico de Talento. El chequeo de
+          # application-identifier de mas abajo aborta si llega el equivocado.
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_TALENTO_BASE64 || secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
@@ -82,6 +97,17 @@ jobs:
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$PROFILE_PLIST")
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          # Verifica que el perfil sea el de ESTA app. Sin esto, un perfil de
+          # otra app de la misma cuenta pasa los demas chequeos y el error solo
+          # aparece al firmar, con un mensaje que no dice cual es el problema.
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$PROFILE_PLIST")
+          if [ "$PROFILE_APP_ID" != "$APPLE_TEAM_ID.$BUNDLE_ID" ]; then
+            echo "::error::El provisioning es de '$PROFILE_APP_ID' y se esperaba '$APPLE_TEAM_ID.$BUNDLE_ID'."
+            echo "Revisa el secret IOS_PROVISIONING_PROFILE_TALENTO_BASE64."
+            exit 1
+          fi
+          echo "OK: el perfil corresponde a $PROFILE_APP_ID"
 
           # Verifica que el perfil traiga la capability de Sign in with Apple.
           # Sin esto compila igual pero el boton de Apple falla en el dispositivo.
