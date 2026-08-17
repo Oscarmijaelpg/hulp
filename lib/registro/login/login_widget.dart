@@ -761,6 +761,92 @@ class _LoginWidgetState extends State<LoginWidget> {
                               ),
                             ),
                           ),
+                          // Sign in with Apple solo existe en iOS. La App Store
+                          // lo exige (Guideline 4.8) por ofrecer Google y
+                          // Facebook, pero en Android no debe aparecer.
+                          if (isiOS)
+                            InkWell(
+                              splashColor: Colors.transparent,
+                              focusColor: Colors.transparent,
+                              hoverColor: Colors.transparent,
+                              highlightColor: Colors.transparent,
+                              onTap: () async {
+                                GoRouter.of(context).prepareAuthEvent();
+                                final user =
+                                    await authManager.signInWithApple(context);
+                                // null tambien es cancelar la hoja de Apple:
+                                // no se muestra error en ese caso.
+                                if (user == null) {
+                                  return;
+                                }
+                                if (!context.mounted) {
+                                  return;
+                                }
+                                context.goNamedAuth(
+                                    HomePageWidget.routeName, context.mounted);
+                              },
+                              child: Container(
+                                width: MediaQuery.sizeOf(context).width * 1.0,
+                                height: 48.0,
+                                decoration: BoxDecoration(
+                                  color: FlutterFlowTheme.of(context)
+                                      .secondaryBackground,
+                                  borderRadius: BorderRadius.circular(20.0),
+                                  border: Border.all(
+                                    color: FlutterFlowTheme.of(context)
+                                        .secondaryText,
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.max,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Icon(
+                                      Icons.apple,
+                                      color: FlutterFlowTheme.of(context)
+                                          .secondaryText,
+                                      size: 24.0,
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        'Iniciar sesión con Apple',
+                                        textAlign: TextAlign.center,
+                                        style: FlutterFlowTheme.of(context)
+                                            .bodyMedium
+                                            .override(
+                                              font: GoogleFonts.inter(
+                                                fontWeight:
+                                                    FlutterFlowTheme.of(context)
+                                                        .bodyMedium
+                                                        .fontWeight,
+                                                fontStyle:
+                                                    FlutterFlowTheme.of(context)
+                                                        .bodyMedium
+                                                        .fontStyle,
+                                              ),
+                                              color: Color(0xFF0B6244),
+                                              fontSize: 16.0,
+                                              letterSpacing: 0.0,
+                                              fontWeight:
+                                                  FlutterFlowTheme.of(context)
+                                                      .bodyMedium
+                                                      .fontWeight,
+                                              fontStyle:
+                                                  FlutterFlowTheme.of(context)
+                                                      .bodyMedium
+                                                      .fontStyle,
+                                            ),
+                                      ),
+                                    ),
+                                  ]
+                                      .divide(SizedBox(width: 4.0))
+                                      .addToStart(SizedBox(width: 14.0))
+                                      .addToEnd(SizedBox(width: 14.0)),
+                                ),
+                              ),
+                            ),
                           InkWell(
                             splashColor: Colors.transparent,
                             focusColor: Colors.transparent,

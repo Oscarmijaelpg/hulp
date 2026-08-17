@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '/auth/auth_manager.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_util.dart';
+import 'apple_auth.dart';
 import 'email_auth.dart';
 import 'google_auth.dart';
 
@@ -12,7 +13,7 @@ import 'supabase_user_provider.dart';
 export '/auth/base_auth_user_provider.dart';
 
 class SupabaseAuthManager extends AuthManager
-    with EmailSignInManager, GoogleSignInManager {
+    with EmailSignInManager, GoogleSignInManager, AppleSignInManager {
   @override
   Future signOut() {
     return SupaFlow.client.auth.signOut();
@@ -126,6 +127,10 @@ class SupabaseAuthManager extends AuthManager
   @override
   Future<BaseAuthUser?> signInWithGoogle(BuildContext context) =>
       _signInOrCreateAccount(context, googleSignInFunc);
+
+  @override
+  Future<BaseAuthUser?> signInWithApple(BuildContext context) =>
+      _signInOrCreateAccount(context, appleSignInFunc);
 
   /// Tries to sign in or create an account using Supabase Auth.
   /// Returns the User object if sign in was successful.

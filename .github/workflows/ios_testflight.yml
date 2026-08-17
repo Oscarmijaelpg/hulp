@@ -92,6 +92,28 @@ jobs:
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
+          # Verifica que el perfil sea el de ESTA app. Un perfil de otra app de
+          # la misma cuenta pasa los demas chequeos y el error solo aparece al
+          # firmar, con un mensaje que no dice cual es el problema.
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$PROFILE_PLIST")
+          if [ "$PROFILE_APP_ID" != "$APPLE_TEAM_ID.$BUNDLE_ID" ]; then
+            echo "::error::El provisioning es de '$PROFILE_APP_ID' y se esperaba '$APPLE_TEAM_ID.$BUNDLE_ID'."
+            exit 1
+          fi
+          echo "OK: el perfil corresponde a $PROFILE_APP_ID"
+
+          # Sign in with Apple es obligatorio para App Review (Guideline 4.8).
+          # Sin la capability en el perfil, compila igual y el boton falla en
+          # el dispositivo.
+          if /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.applesignin" "$PROFILE_PLIST" >/dev/null 2>&1; then
+            echo "OK: el provisioning incluye Sign in with Apple."
+          else
+            echo "::error::El provisioning NO incluye 'com.apple.developer.applesignin'."
+            echo "Habilita la capability en el App ID $BUNDLE_ID, regenera el perfil"
+            echo "y actualiza el secret IOS_PROVISIONING_PROFILE_BASE64."
+            exit 1
+          fi
+
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -116,22 +138,35 @@ jobs:
           echo -n "$APPSTORE_API_PRIVATE_KEY" > "$API_KEY_PATH"
           echo "API_KEY_PATH=$API_KEY_PATH" >> "$GITHUB_ENV"
 
-      - name: Add Push Notifications entitlement
+      - name: Verify entitlements file
         run: |
           set -euo pipefail
           ENTITLEMENTS_PATH="ios/Runner/Runner.entitlements"
+
+          # El archivo esta versionado con applesignin y aps-environment, y el
+          # pbxproj lo referencia via CODE_SIGN_ENTITLEMENTS. Antes existia
+          # vacio y huerfano: Xcode nunca lo aplicaba, asi que iOS se quedo sin
+          # push pese a usar OneSignal. Este paso solia escribirlo "si no
+          # existe", que al existir vacio era un no-op silencioso.
           if [ ! -f "$ENTITLEMENTS_PATH" ]; then
-            cat > "$ENTITLEMENTS_PATH" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>aps-environment</key>
-            <string>production</string>
-          </dict>
-          </plist>
-          EOF
+            echo "::error::falta $ENTITLEMENTS_PATH (deberia estar versionado)."
+            exit 1
           fi
+
+          for KEY in com.apple.developer.applesignin aps-environment; do
+            if ! /usr/libexec/PlistBuddy -c "Print :$KEY" "$ENTITLEMENTS_PATH" >/dev/null 2>&1; then
+              echo "::error::$ENTITLEMENTS_PATH no declara '$KEY'."
+              exit 1
+            fi
+          done
+
+          if ! grep -q "CODE_SIGN_ENTITLEMENTS" ios/Runner.xcodeproj/project.pbxproj; then
+            echo "::error::el pbxproj no referencia el entitlements: Xcode lo ignoraria."
+            exit 1
+          fi
+
+          echo "Entitlements que se van a firmar:"
+          /usr/libexec/PlistBuddy -c "Print" "$ENTITLEMENTS_PATH"
 
       - name: Force manual signing in Xcode
         run: |
@@ -216,6 +251,23 @@ jobs:
             -authenticationKeyPath "$API_KEY_PATH"
 
           echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
+
+      - name: Verify entitlements in signed binary
+        run: |
+          set -euo pipefail
+          APP_PATH="$ARCHIVE_PATH/Products/Applications/Runner.app"
+          echo "Entitlements embebidos en el binario firmado:"
+          codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
+
+          FIRMADOS=$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)
+          for KEY in com.apple.developer.applesignin aps-environment; do
+            if ! echo "$FIRMADOS" | grep -q "$KEY"; then
+              echo "::error::la app se firmo SIN '$KEY'."
+              echo "Revisa CODE_SIGN_ENTITLEMENTS en ios/Runner.xcodeproj/project.pbxproj."
+              exit 1
+            fi
+          done
+          echo "OK: Sign in with Apple y push quedaron firmados en la app."
 
       - name: Export IPA
         run: |
