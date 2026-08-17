@@ -1,5 +1,7 @@
-import '/components/alert_cerrarsesion_widget.dart';
+import '/auth/supabase_auth/auth_util.dart';
+import '/backend/supabase/supabase.dart';
 import '/components/menu_bar_widget.dart';
+import '/index.dart';
 import '/flutter_flow/flutter_flow_icon_button.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -39,6 +41,81 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
     super.dispose();
   }
 
+  void _mostrarMensaje(String texto, {bool esError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(texto),
+        backgroundColor: esError
+            ? FlutterFlowTheme.of(context).error
+            : FlutterFlowTheme.of(context).primary,
+      ),
+    );
+  }
+
+  Future<bool> _confirmar() async {
+    final respuesta = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('¿Eliminar tu cuenta?'),
+        content: Text(
+          'Esta acción es permanente. No podrás recuperar tu cuenta '
+          'ni volver a iniciar sesión con ella.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              'Eliminar',
+              style: TextStyle(color: FlutterFlowTheme.of(context).error),
+            ),
+          ),
+        ],
+      ),
+    );
+    return respuesta ?? false;
+  }
+
+  Future<void> _eliminarCuenta() async {
+    if (!await _confirmar()) return;
+
+    safeSetState(() => _model.eliminando = true);
+
+    try {
+      await SupaFlow.client.rpc('eliminar_mi_cuenta');
+    } catch (e) {
+      debugPrint('Error eliminando la cuenta: $e');
+      if (mounted) {
+        safeSetState(() => _model.eliminando = false);
+        _mostrarMensaje('No pudimos eliminar tu cuenta. Intenta más tarde.');
+      }
+      return;
+    }
+
+    // A partir de aqui el borrado YA se hizo. signOut() puede responder 401
+    // porque la cuenta dejo de existir, y eso no es un fallo: si se dejara
+    // dentro del try de arriba, se mostraria "no pudimos eliminar tu cuenta"
+    // justo despues de haberla eliminado.
+    if (!mounted) return;
+    try {
+      GoRouter.of(context).prepareAuthEvent();
+      await authManager.signOut();
+      GoRouter.of(context).clearRedirectLocation();
+    } catch (e) {
+      debugPrint('signOut tras eliminar la cuenta: $e');
+    }
+
+    if (!mounted) return;
+    safeSetState(() => _model.eliminando = false);
+    _mostrarMensaje('Tu cuenta fue eliminada', esError: false);
+    context.goNamedAuth(LoginWidget.routeName, context.mounted);
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -67,7 +144,7 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
             },
           ),
           title: Text(
-            'Desactivar cuenta',
+            'Eliminar cuenta',
             style: FlutterFlowTheme.of(context).headlineMedium.override(
                   font: GoogleFonts.interTight(
                     fontWeight:
@@ -124,7 +201,7 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
                       ),
                       TextSpan(
                         text:
-                            'asegúrate de comprender el significado de desactivar tu cuenta.',
+                            'asegúrate de comprender el significado de eliminar tu cuenta.',
                         style: TextStyle(
                           color: FlutterFlowTheme.of(context).texto1,
                           fontWeight: FontWeight.w600,
@@ -132,14 +209,14 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
                         ),
                       ),
                       TextSpan(
-                        text: '\n\nAl desactivarla, tu cuenta ',
+                        text: '\n\nAl eliminarla, tu cuenta y tus datos personales ',
                         style: TextStyle(
                           color: FlutterFlowTheme.of(context).texto1,
                           fontSize: 16.0,
                         ),
                       ),
                       TextSpan(
-                        text: 'quedará suspendida temporalmente. ',
+                        text: 'se borrarán de forma permanente. ',
                         style: TextStyle(
                           color: FlutterFlowTheme.of(context).texto1,
                           fontWeight: FontWeight.w600,
@@ -148,7 +225,7 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
                       ),
                       TextSpan(
                         text:
-                            'Durante este período, no podrás solicitar servicios, pero podrás reactivarla en cualquier momento simplemente iniciando sesión.',
+                            'No hay forma de recuperarla ni de volver a iniciar sesión con ella. Por obligaciones contables se conservan los comprobantes de los servicios ya pagados, sin ningún dato que te identifique.',
                         style: TextStyle(
                           color: FlutterFlowTheme.of(context).texto1,
                           fontSize: 16.0,
@@ -186,29 +263,10 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
                     focusColor: Colors.transparent,
                     hoverColor: Colors.transparent,
                     highlightColor: Colors.transparent,
-                    onTap: () async {
-                      await showModalBottomSheet(
-                        isScrollControlled: true,
-                        backgroundColor: Colors.transparent,
-                        enableDrag: false,
-                        context: context,
-                        builder: (context) {
-                          return GestureDetector(
-                            onTap: () {
-                              FocusScope.of(context).unfocus();
-                              FocusManager.instance.primaryFocus?.unfocus();
-                            },
-                            child: Padding(
-                              padding: MediaQuery.viewInsetsOf(context),
-                              child: AlertCerrarsesionWidget(
-                                nombre:
-                                    '¿Estas seguro de desactivar tu cuenta?',
-                              ),
-                            ),
-                          );
-                        },
-                      ).then((value) => safeSetState(() {}));
-                    },
+                    // Camino propio, sin AlertCerrarsesionWidget: ese componente
+                    // lo comparte el "Cerrar sesion" de Mi Perfil y solo hace
+                    // signOut(). Meterle el borrado ahi romperia el logout.
+                    onTap: _model.eliminando ? null : () => _eliminarCuenta(),
                     child: Container(
                       width: MediaQuery.sizeOf(context).width * 1.0,
                       decoration: BoxDecoration(
@@ -236,7 +294,7 @@ class _DesactivarcuentaWidgetState extends State<DesactivarcuentaWidget> {
                               ),
                             ),
                             Text(
-                              'Desactivar cuenta',
+                              'Eliminar cuenta',
                               style: FlutterFlowTheme.of(context)
                                   .bodyMedium
                                   .override(

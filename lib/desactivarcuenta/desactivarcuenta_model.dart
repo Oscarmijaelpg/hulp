@@ -9,6 +9,9 @@ class DesactivarcuentaModel extends FlutterFlowModel<DesactivarcuentaWidget> {
   // Model for MenuBar component.
   late MenuBarModel menuBarModel;
 
+  // Bloquea el boton mientras corre el borrado.
+  bool eliminando = false;
+
   @override
   void initState(BuildContext context) {
     menuBarModel = createModel(context, () => MenuBarModel());

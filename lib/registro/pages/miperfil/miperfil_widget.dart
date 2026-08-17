@@ -632,7 +632,7 @@ class _MiperfilWidgetState extends State<MiperfilWidget> {
                                               ),
                                             ),
                                             Text(
-                                              'Desactivar cuenta',
+                                              'Eliminar cuenta',
                                               style: FlutterFlowTheme.of(
                                                       context)
                                                   .bodyMedium
