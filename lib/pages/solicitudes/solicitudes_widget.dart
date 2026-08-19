@@ -3,6 +3,7 @@ import '/backend/api_requests/api_calls.dart';
 import '/backend/schema/structs/index.dart';
 import '/backend/supabase/supabase.dart';
 import '/components/cancelar_servicio_widget.dart';
+import '/components/enlace_mapa_widget.dart';
 import '/components/finalizar_servicio_widget.dart';
 import '/components/lista_vacia_widget.dart';
 import '/components/men_widget.dart';
@@ -901,6 +902,12 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       ].divide(SizedBox(width: 8.0)),
                                                                                                     ),
                                                                                                   ),
+                                                                                                  EnlaceMapaWidget(
+                                                                                                    latitud: serviciosentItem.latitud,
+                                                                                                    longitud: serviciosentItem.longitud,
+                                                                                                    direccion: serviciosentItem.ubicacion,
+                                                                                                    navegacion: false,
+                                                                                                  ),
                                                                                                   Padding(
                                                                                                     padding: EdgeInsets.all(8.0),
                                                                                                     child: Row(
@@ -1549,6 +1556,12 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                   ),
                                                                                                 ].divide(SizedBox(width: 8.0)),
                                                                                               ),
+                                                                                            ),
+                                                                                            EnlaceMapaWidget(
+                                                                                              latitud: solicitudesAceptadasxItem.latitud,
+                                                                                              longitud: solicitudesAceptadasxItem.longitud,
+                                                                                              direccion: solicitudesAceptadasxItem.ubicacion,
+                                                                                              navegacion: true,
                                                                                             ),
                                                                                             Padding(
                                                                                               padding: EdgeInsets.all(8.0),

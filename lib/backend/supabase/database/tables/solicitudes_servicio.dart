@@ -94,4 +94,12 @@ class SolicitudesServicioRow extends SupabaseDataRow {
 
   String? get ciudadId => getField<String>('ciudad_id');
   set ciudadId(String? value) => setField<String>('ciudad_id', value);
+
+  // Punto exacto del servicio (migracion 0003 del admin). Nulo en todo lo
+  // creado antes, y en lo que se cree sin capturarlo: la UI debe tolerarlo.
+  double? get latitud => getField<double>('latitud');
+  set latitud(double? value) => setField<double>('latitud', value);
+
+  double? get longitud => getField<double>('longitud');
+  set longitud(double? value) => setField<double>('longitud', value);
 }

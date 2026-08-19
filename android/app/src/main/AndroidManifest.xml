@@ -39,4 +39,13 @@
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
     <meta-data android:name="flutterEmbedding" android:value="2"/>
   </application>
+  <!-- targetSdk 36: sin este bloque Android oculta las apps que pueden abrir
+       un enlace, url_launcher no encuentra a quien delegar y "Cómo llegar"
+       no abre Google Maps. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW"/>
+      <data android:scheme="https"/>
+    </intent>
+  </queries>
 </manifest>
