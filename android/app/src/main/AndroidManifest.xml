@@ -13,6 +13,7 @@
     android:icon="@mipmap/ic_launcher"
     android:requestLegacyExternalStorage="true"
   >
+    <meta-data android:name="com.google.android.geo.API_KEY" android:value="${mapsApiKey}"/>
     <meta-data android:name="com.facebook.sdk.ApplicationId" android:value="4328481204143706"/>
     <meta-data android:name="com.facebook.sdk.ClientToken" android:value="f4a348600c6845caa2c4c42605e68337"/>
     <activity android:name="com.facebook.FacebookActivity" android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation" android:label="@string/app_name"/>

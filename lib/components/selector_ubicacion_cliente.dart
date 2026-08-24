@@ -1,37 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '/environment_values.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
+import '/flutter_flow/places_service.dart';
 import '/flutter_flow/ubicacion_helpers.dart';
 
-/// Punto exacto del servicio, para la app de clientes.
+/// Mapa para escoger dónde se presta el servicio, con buscador de direcciones.
 ///
-/// La dirección escrita sigue siendo la obligatoria; esto es un extra que le
-/// ahorra al proveedor dar vueltas. Dos caminos, en el orden en que la gente
-/// los usa desde el móvil:
+/// Tres formas de fijar el punto, y todas acaban en lo mismo:
+///   - Buscar la dirección y elegir una sugerencia.
+///   - Tocar el mapa, o arrastrar el marcador para afinar.
+///   - El botón de «mi ubicación», que es lo que más se usa desde el móvil.
 ///
-///   1. **Usar mi ubicación actual.** Lo normal: el cliente pide el servicio
-///      estando en el sitio.
-///   2. **Pegar un enlace de Google Maps o unas coordenadas.** Para cuando el
-///      servicio es en otra parte —la casa de un familiar, una oficina—, o el
-///      GPS no afina.
-///
-/// No lleva mapa. El del panel de administración es interoperabilidad con la
-/// API de JavaScript y aquí no serviría: en Android e iOS haría falta
-/// `google_maps_flutter` con sus claves nativas. Se puede añadir después sin
-/// tocar a quien use este widget, porque el único contrato hacia fuera es
-/// `onCambio`.
+/// Cada vez que el punto cambia se consulta la dirección de ese sitio y se
+/// devuelve por `onDireccionSugerida`, para que el texto y el punto no se
+/// contradigan.
 class SelectorUbicacionCliente extends StatefulWidget {
   const SelectorUbicacionCliente({
     super.key,
     required this.onCambio,
+    this.onDireccionSugerida,
     this.coordenadasIniciales,
+    this.altura = 260.0,
   });
 
-  /// Se avisa con el punto, o con null cuando se quita.
   final ValueChanged<Coordenadas?> onCambio;
+
+  /// La dirección legible del punto elegido, para rellenar el campo de arriba.
+  final ValueChanged<String>? onDireccionSugerida;
+
   final Coordenadas? coordenadasIniciales;
+  final double altura;
 
   @override
   State<SelectorUbicacionCliente> createState() =>
@@ -39,19 +43,28 @@ class SelectorUbicacionCliente extends StatefulWidget {
 }
 
 class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
-  final _pegarCtrl = TextEditingController();
+  // Bogotá: el centro del país de operación, para no abrir el mapa en el
+  // Atlántico mientras se resuelve la ubicación real.
+  static const _bogota = LatLng(4.7109, -74.0721);
+
+  final _buscarCtrl = TextEditingController();
+  final _completer = Completer<GoogleMapController>();
+
+  late final PlacesService _places;
+  Timer? _debounce;
+
   Coordenadas? _punto;
-  String? _error;
+  List<SugerenciaLugar> _sugerencias = const [];
   bool _buscandoGps = false;
-  bool _mostrarPegar = false;
+  bool _resolviendo = false;
+  String? _aviso;
 
   @override
   void initState() {
     super.initState();
+    _places = PlacesService(FFDevEnvironmentValues().googleMapsApiKey);
     _punto = widget.coordenadasIniciales;
     if (_punto != null) {
-      // Tras el primer fotograma: el padre no puede recibir un aviso mientras
-      // se está construyendo.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onCambio(_punto);
       });
@@ -60,46 +73,103 @@ class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
 
   @override
   void dispose() {
-    _pegarCtrl.dispose();
+    _debounce?.cancel();
+    _buscarCtrl.dispose();
     super.dispose();
   }
 
-  void _fijar(Coordenadas? punto, {String? error}) {
+  LatLng get _centro => _punto == null
+      ? _bogota
+      : LatLng(_punto!.latitud, _punto!.longitud);
+
+  Future<void> _mover(LatLng destino, {double zoom = 17}) async {
+    final c = await _completer.future;
+    await c.animateCamera(CameraUpdate.newLatLngZoom(destino, zoom));
+  }
+
+  /// Fija el punto y, salvo que ya venga con dirección, pregunta cuál es.
+  Future<void> _fijar(Coordenadas punto, {String? direccion}) async {
     setState(() {
       _punto = punto;
-      _error = error;
+      _aviso = null;
+      _sugerencias = const [];
     });
     widget.onCambio(punto);
+
+    if (direccion != null && direccion.isNotEmpty) {
+      widget.onDireccionSugerida?.call(direccion);
+      return;
+    }
+    if (widget.onDireccionSugerida == null) return;
+
+    setState(() => _resolviendo = true);
+    final texto = await _places.direccionDe(punto.latitud, punto.longitud);
+    if (!mounted) return;
+    setState(() => _resolviendo = false);
+    // Si no se encuentra, se deja lo que ya hubiera escrito: vaciarlo seria
+    // peor que no tocarlo.
+    if (texto != null) widget.onDireccionSugerida!.call(texto);
+  }
+
+  void _quitar() {
+    setState(() {
+      _punto = null;
+      _aviso = null;
+      _buscarCtrl.clear();
+      _sugerencias = const [];
+    });
+    widget.onCambio(null);
+  }
+
+  void _buscar(String texto) {
+    _debounce?.cancel();
+    if (texto.trim().length < 3) {
+      setState(() => _sugerencias = const []);
+      return;
+    }
+    // 350 ms: se cobra por sesion, pero cada pulsacion viaja igual.
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      final r = await _places.sugerencias(texto);
+      if (mounted) setState(() => _sugerencias = r);
+    });
+  }
+
+  Future<void> _elegirSugerencia(SugerenciaLugar s) async {
+    FocusScope.of(context).unfocus();
+    final lugar = await _places.detalle(s.placeId);
+    if (!mounted || lugar == null) return;
+    _buscarCtrl.text = lugar.direccion;
+    await _fijar(lugar.coordenadas, direccion: lugar.direccion);
+    await _mover(LatLng(lugar.coordenadas.latitud, lugar.coordenadas.longitud));
   }
 
   Future<void> _usarUbicacionActual() async {
     setState(() {
       _buscandoGps = true;
-      _error = null;
+      _aviso = null;
     });
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        _fijar(null,
-            error: 'La ubicación del teléfono está apagada. Actívala e '
-                'inténtalo otra vez.');
+        setState(() => _aviso =
+            'La ubicación del teléfono está apagada. Actívala o busca la '
+            'dirección arriba.');
         return;
       }
-
       var permiso = await Geolocator.checkPermission();
       if (permiso == LocationPermission.denied) {
         permiso = await Geolocator.requestPermission();
       }
       if (permiso == LocationPermission.deniedForever) {
-        // Aquí no sirve volver a pedirlo: el sistema ya no muestra el diálogo.
-        _fijar(null,
-            error: 'Diste el permiso de ubicación por denegado. Puedes '
-                'activarlo en los ajustes del teléfono, o pegar el enlace.');
+        // Volver a pedirlo no sirve: el sistema ya no muestra el diálogo.
+        setState(() => _aviso =
+            'Diste el permiso de ubicación por denegado. Actívalo en los '
+            'ajustes, o marca el punto en el mapa.');
         return;
       }
       if (permiso == LocationPermission.denied) {
-        _fijar(null,
-            error: 'Sin permiso de ubicación. Puedes escribir la dirección o '
-                'pegar un enlace de Maps.');
+        setState(() => _aviso =
+            'Sin permiso de ubicación. Puedes buscar la dirección o tocar el '
+            'mapa.');
         return;
       }
 
@@ -109,150 +179,186 @@ class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
           timeLimit: Duration(seconds: 20),
         ),
       );
-      _fijar(Coordenadas(pos.latitude, pos.longitude));
+      if (!mounted) return;
+      final punto = Coordenadas(pos.latitude, pos.longitude);
+      await _fijar(punto);
+      await _mover(LatLng(punto.latitud, punto.longitud));
     } catch (_) {
-      _fijar(null,
-          error: 'No se pudo obtener la ubicación. Prueba a pegar el enlace '
-              'de Google Maps.');
+      if (mounted) {
+        setState(() => _aviso =
+            'No se pudo obtener tu ubicación. Busca la dirección o toca el '
+            'mapa.');
+      }
     } finally {
       if (mounted) setState(() => _buscandoGps = false);
-    }
-  }
-
-  void _analizarPegado(String texto) {
-    final r = analizarUbicacion(texto);
-    if (r.hayPunto) {
-      _fijar(r.coordenadas);
-    } else {
-      _fijar(null, error: r.error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final tema = FlutterFlowTheme.of(context);
+
+    if (!FFDevEnvironmentValues().tieneGoogleMaps) {
+      // Sin clave no hay mapa que enseñar. Se dice, en vez de dejar un hueco
+      // gris que parece que la app está rota.
+      return Container(
+        padding: const EdgeInsets.all(12.0),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F8F9),
+          borderRadius: BorderRadius.circular(12.0),
+          border: Border.all(color: const Color(0xFFDFDFDF), width: 0.5),
+        ),
+        child: Text(
+          'El mapa no está disponible en este momento. La dirección escrita '
+          'arriba es suficiente para agendar.',
+          style: tema.bodySmall.override(
+            font: GoogleFonts.inter(),
+            color: tema.secondaryText,
+            fontSize: 12.0,
+            letterSpacing: 0.0,
+          ),
+        ),
+      );
+    }
+
     final punto = _punto;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (punto == null) ...[
-          _BotonAccion(
-            icono: Icons.my_location_rounded,
-            texto: _buscandoGps
-                ? 'Buscando tu ubicación…'
-                : 'Usar mi ubicación actual',
-            cargando: _buscandoGps,
-            onTap: _buscandoGps ? null : _usarUbicacionActual,
-          ),
-          const SizedBox(height: 8.0),
-          if (!_mostrarPegar)
-            TextButton(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () => setState(() => _mostrarPegar = true),
-              child: Text(
-                'O pegar un enlace de Google Maps',
-                style: tema.bodyMedium.override(
-                  font: GoogleFonts.inter(fontWeight: FontWeight.w500),
-                  color: tema.primary,
-                  fontSize: 13.0,
-                  letterSpacing: 0.0,
-                ),
-              ),
-            ),
-          if (_mostrarPegar)
-            TextFormField(
-              controller: _pegarCtrl,
-              onChanged: _analizarPegado,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: 'Pega el enlace o 4.710989, -74.072092',
-                hintStyle: tema.labelMedium.override(
-                  font: GoogleFonts.inter(),
-                  fontSize: 13.0,
-                  letterSpacing: 0.0,
-                ),
-                prefixIcon:
-                    Icon(Icons.link_rounded, size: 18.0, color: tema.secondary),
-                enabledBorder: OutlineInputBorder(
-                  borderSide:
-                      const BorderSide(color: Color(0xFFDFDFDF), width: 0.5),
-                  borderRadius: BorderRadius.circular(12.0),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: tema.primary, width: 0.8),
-                  borderRadius: BorderRadius.circular(12.0),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12.0, vertical: 12.0),
-              ),
-              style: tema.bodyMedium.override(
-                font: GoogleFonts.inter(),
-                fontSize: 14.0,
-                letterSpacing: 0.0,
-              ),
-            ),
-        ],
-        if (punto != null)
+        _CampoBuscar(
+          controller: _buscarCtrl,
+          onChanged: _buscar,
+          onLimpiar: () {
+            _buscarCtrl.clear();
+            setState(() => _sugerencias = const []);
+          },
+        ),
+        // Las sugerencias van en el flujo, no en un Overlay: dentro de una
+        // pagina que se desplaza, un Overlay se queda flotando donde estaba.
+        if (_sugerencias.isNotEmpty)
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12.0),
+            margin: const EdgeInsetsDirectional.fromSTEB(0.0, 4.0, 0.0, 0.0),
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF3ED),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(12.0),
-              border: Border.all(color: tema.alternate, width: 0.5),
+              border: Border.all(color: const Color(0xFFDFDFDF), width: 0.5),
             ),
-            child: Row(
+            child: Column(
+              children: _sugerencias
+                  .take(4)
+                  .map((s) => _FilaSugerencia(
+                        sugerencia: s,
+                        onTap: () => _elegirSugerencia(s),
+                      ))
+                  .toList(),
+            ),
+          ),
+        const SizedBox(height: 8.0),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12.0),
+          child: SizedBox(
+            height: widget.altura,
+            child: Stack(
               children: [
-                Icon(Icons.check_circle_rounded,
-                    size: 18.0, color: tema.primary),
-                const SizedBox(width: 8.0),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Ubicación exacta guardada',
-                        style: tema.bodyMedium.override(
-                          font:
-                              GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          color: tema.primaryText,
-                          fontSize: 13.0,
-                          letterSpacing: 0.0,
-                        ),
+                GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: _centro,
+                    zoom: punto == null ? 12 : 17,
+                  ),
+                  onMapCreated: (c) {
+                    if (!_completer.isCompleted) _completer.complete(c);
+                  },
+                  onTap: (p) => _fijar(Coordenadas(p.latitude, p.longitude)),
+                  markers: punto == null
+                      ? const {}
+                      : {
+                          Marker(
+                            markerId: const MarkerId('servicio'),
+                            position:
+                                LatLng(punto.latitud, punto.longitud),
+                            draggable: true,
+                            onDragEnd: (p) => _fijar(
+                                Coordenadas(p.latitude, p.longitude)),
+                          ),
+                        },
+                  // El de serie se solapa con los controles propios y en web
+                  // pide el permiso nada más abrir; se usa el boton de abajo.
+                  myLocationButtonEnabled: false,
+                  myLocationEnabled: false,
+                  zoomControlsEnabled: false,
+                  mapToolbarEnabled: false,
+                ),
+                Positioned(
+                  right: 8.0,
+                  bottom: 8.0,
+                  child: _BotonRedondo(
+                    icono: Icons.my_location_rounded,
+                    cargando: _buscandoGps,
+                    onTap: _buscandoGps ? null : _usarUbicacionActual,
+                  ),
+                ),
+                if (punto == null)
+                  Positioned(
+                    left: 8.0,
+                    right: 56.0,
+                    bottom: 8.0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10.0, vertical: 8.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(8.0),
                       ),
-                      Text(
-                        punto.formateadas,
+                      child: Text(
+                        'Toca el mapa para marcar dónde es el servicio',
                         style: tema.bodySmall.override(
                           font: GoogleFonts.inter(),
-                          color: tema.secondaryText,
+                          color: tema.primaryText,
                           fontSize: 12.0,
                           letterSpacing: 0.0,
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (punto != null)
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 8.0, 0.0, 0.0),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_rounded,
+                    size: 16.0, color: tema.primary),
+                const SizedBox(width: 6.0),
+                Expanded(
+                  child: Text(
+                    _resolviendo
+                        ? 'Buscando la dirección…'
+                        : 'Punto guardado: ${punto.formateadas}',
+                    style: tema.bodySmall.override(
+                      font: GoogleFonts.inter(),
+                      color: tema.secondaryText,
+                      fontSize: 12.0,
+                      letterSpacing: 0.0,
+                    ),
                   ),
                 ),
                 TextButton(
                   style: TextButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 32),
+                    minimumSize: const Size(0, 28),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: () {
-                    _pegarCtrl.clear();
-                    _fijar(null);
-                  },
+                  onPressed: _quitar,
                   child: Text(
                     'Quitar',
-                    style: tema.bodyMedium.override(
-                      font: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                    style: tema.bodySmall.override(
+                      font: GoogleFonts.inter(fontWeight: FontWeight.w600),
                       color: tema.primary,
-                      fontSize: 13.0,
+                      fontSize: 12.0,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -262,10 +368,9 @@ class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
           ),
         if (punto != null && punto.pareceFueraDeColombia)
           Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 6.0, 0.0, 0.0),
+            padding: const EdgeInsetsDirectional.fromSTEB(0.0, 4.0, 0.0, 0.0),
             child: Text(
-              'Ese punto no parece estar en Colombia. Comprueba que no estén '
-              'cambiados el orden de los números.',
+              'Ese punto no parece estar en Colombia.',
               style: tema.bodySmall.override(
                 font: GoogleFonts.inter(),
                 color: tema.error,
@@ -274,11 +379,11 @@ class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
               ),
             ),
           ),
-        if (_error != null)
+        if (_aviso != null)
           Padding(
             padding: const EdgeInsetsDirectional.fromSTEB(0.0, 6.0, 0.0, 0.0),
             child: Text(
-              _error!,
+              _aviso!,
               style: tema.bodySmall.override(
                 font: GoogleFonts.inter(),
                 color: tema.error,
@@ -292,60 +397,149 @@ class _SelectorUbicacionClienteState extends State<SelectorUbicacionCliente> {
   }
 }
 
-class _BotonAccion extends StatelessWidget {
-  const _BotonAccion({
-    required this.icono,
-    required this.texto,
-    required this.onTap,
-    this.cargando = false,
+class _CampoBuscar extends StatelessWidget {
+  const _CampoBuscar({
+    required this.controller,
+    required this.onChanged,
+    required this.onLimpiar,
   });
 
-  final IconData icono;
-  final String texto;
-  final VoidCallback? onTap;
-  final bool cargando;
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onLimpiar;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = FlutterFlowTheme.of(context);
+    return TextFormField(
+      controller: controller,
+      onChanged: onChanged,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: 'Busca la dirección…',
+        hintStyle: tema.labelMedium.override(
+          font: GoogleFonts.inter(),
+          fontSize: 14.0,
+          letterSpacing: 0.0,
+        ),
+        prefixIcon:
+            Icon(Icons.search_rounded, size: 20.0, color: tema.secondary),
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                icon: Icon(Icons.close_rounded,
+                    size: 18.0, color: tema.secondary),
+                onPressed: onLimpiar,
+              ),
+        enabledBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Color(0xFFDFDFDF), width: 0.5),
+          borderRadius: BorderRadius.circular(12.0),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: tema.primary, width: 0.8),
+          borderRadius: BorderRadius.circular(12.0),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12.0, vertical: 14.0),
+      ),
+      style: tema.bodyMedium.override(
+        font: GoogleFonts.inter(),
+        fontSize: 14.0,
+        letterSpacing: 0.0,
+      ),
+    );
+  }
+}
+
+class _FilaSugerencia extends StatelessWidget {
+  const _FilaSugerencia({required this.sugerencia, required this.onTap});
+
+  final SugerenciaLugar sugerencia;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final tema = FlutterFlowTheme.of(context);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12.0),
-      child: Container(
-        width: double.infinity,
+      child: Padding(
         padding:
-            const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF7F8F9),
-          borderRadius: BorderRadius.circular(12.0),
-          border: Border.all(color: const Color(0xFFDFDFDF), width: 0.5),
-        ),
+            const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
         child: Row(
           children: [
-            if (cargando)
-              SizedBox(
-                width: 18.0,
-                height: 18.0,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.0,
-                  valueColor: AlwaysStoppedAnimation<Color>(tema.primary),
-                ),
-              )
-            else
-              Icon(icono, size: 18.0, color: tema.primary),
+            Icon(Icons.place_outlined, size: 16.0, color: tema.secondary),
             const SizedBox(width: 8.0),
             Expanded(
-              child: Text(
-                texto,
-                style: tema.bodyMedium.override(
-                  font: GoogleFonts.inter(fontWeight: FontWeight.w500),
-                  color: tema.primaryText,
-                  fontSize: 14.0,
-                  letterSpacing: 0.0,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    sugerencia.principal,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tema.bodyMedium.override(
+                      font: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                      color: tema.primaryText,
+                      fontSize: 13.0,
+                      letterSpacing: 0.0,
+                    ),
+                  ),
+                  if (sugerencia.secundario.isNotEmpty)
+                    Text(
+                      sugerencia.secundario,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tema.bodySmall.override(
+                        font: GoogleFonts.inter(),
+                        color: tema.secondaryText,
+                        fontSize: 11.0,
+                        letterSpacing: 0.0,
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BotonRedondo extends StatelessWidget {
+  const _BotonRedondo({
+    required this.icono,
+    required this.onTap,
+    this.cargando = false,
+  });
+
+  final IconData icono;
+  final VoidCallback? onTap;
+  final bool cargando;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = FlutterFlowTheme.of(context);
+    return Material(
+      color: Colors.white,
+      elevation: 2.0,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 40.0,
+          height: 40.0,
+          child: cargando
+              ? Padding(
+                  padding: const EdgeInsets.all(11.0),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.0,
+                    valueColor: AlwaysStoppedAnimation<Color>(tema.primary),
+                  ),
+                )
+              : Icon(icono, size: 20.0, color: tema.primary),
         ),
       ),
     );

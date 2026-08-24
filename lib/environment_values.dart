@@ -58,6 +58,8 @@ class FFDevEnvironmentValues {
       _supabaseAnonKey = data['supabaseAnonKey'];
       _integrityKey = data['integrityKey'];
       _n8nWebhookUrl = data['n8nWebhookUrl'];
+      _googleMapsApiKey = data['googleMapsApiKey'] ?? '';
+      _googleMapsMapId = data['googleMapsMapId'] ?? '';
     } catch (e) {
       print('Error loading environment values: $e');
     }
@@ -83,4 +85,14 @@ class FFDevEnvironmentValues {
 
   String _n8nWebhookUrl = '';
   String get n8nWebhookUrl => _n8nWebhookUrl;
+
+  // La clave de Maps es publica por diseno en una app: lo que la protege es
+  // la restriccion por aplicacion en Google Cloud, no el secreto.
+  String _googleMapsApiKey = '';
+  String get googleMapsApiKey => _googleMapsApiKey;
+  bool get tieneGoogleMaps => _googleMapsApiKey.isNotEmpty;
+
+  String _googleMapsMapId = '';
+  String? get googleMapsMapId =>
+      _googleMapsMapId.isEmpty ? null : _googleMapsMapId;
 }

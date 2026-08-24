@@ -472,6 +472,12 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                 SelectorUbicacionCliente(
                   coordenadasIniciales: _coordenadas,
                   onCambio: (punto) => setState(() => _coordenadas = punto),
+                  // Al marcar en el mapa se rellena la direccion de arriba,
+                  // para que el texto y el punto no se contradigan.
+                  onDireccionSugerida: (texto) => setState(() {
+                    _addressCtrl.text = texto;
+                    _errors.remove('address');
+                  }),
                 ),
                 const SizedBox(height: 32),
 

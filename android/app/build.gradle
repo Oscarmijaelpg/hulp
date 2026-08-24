@@ -59,6 +59,16 @@ android {
         targetSdkVersion 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
+        // La clave de Maps se lee de local.properties, que NO esta en el
+        // repositorio. En una app la clave acaba siendo publica de todos modos
+        // -se saca del APK-, asi que lo que la protege es la restriccion por
+        // huella SHA-1 y nombre de paquete en Google Cloud, no el secreto. Aun
+        // asi no se versiona: la de un proyecto no tiene por que viajar en el
+        // repositorio de otro.
+        manifestPlaceholders += [
+            mapsApiKey: localProperties.getProperty('maps.apiKey') ?: ''
+        ]
     }
 
    signingConfigs {

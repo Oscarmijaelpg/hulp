@@ -99,5 +99,7 @@
       <string>fbapi</string>
       <string>fb-messenger-share-api</string>
     </array>
-  </dict>
+  	<key>GMSApiKey</key>
+	<string>$(MAPS_API_KEY)</string>
+</dict>
 </plist>
