@@ -5,7 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import '/components/selector_ubicacion_cliente.dart';
+import '/components/pantalla_mapa_ubicacion.dart';
+import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/ubicacion_helpers.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/database/tables/servicios.dart';
@@ -72,9 +73,27 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
   final _addressCtrl = TextEditingController();
   final _complementoCtrl = TextEditingController();
 
-  /// Punto exacto, opcional. La direccion escrita sigue siendo la
-  /// obligatoria: esto solo evita que el proveedor de vueltas.
+  /// Punto exacto del servicio. Va junto con la dirección: las dos salen de
+  /// la misma pantalla de mapa, así que no pueden contradecirse.
   Coordenadas? _coordenadas;
+
+  Future<void> _abrirMapa() async {
+    FocusScope.of(context).unfocus();
+    final r = await Navigator.of(context).push<UbicacionElegida>(
+      MaterialPageRoute(
+        builder: (_) => PantallaMapaUbicacion(
+          inicial: _coordenadas,
+          direccionInicial: _addressCtrl.text,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _coordenadas = r.coordenadas;
+      _addressCtrl.text = r.direccion;
+      _errors.remove('address');
+    });
+  }
 
   bool _isSubmitting = false;
   final Map<String, String> _errors = {};
@@ -450,13 +469,15 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // Dirección
+                // Dirección: ya no se escribe a mano. Se elige en el mapa,
+                // que devuelve punto y dirección a la vez y evita que el texto
+                // y las coordenadas se contradigan.
                 const _FieldLabel('Dirección'),
                 const SizedBox(height: 6),
-                _AddressField(
-                  controller: _addressCtrl,
-                  hint: 'Calle 85 # 15-32, Oficina 502',
+                _BotonUbicacion(
+                  direccion: _addressCtrl.text,
                   errorText: _errors['address'],
+                  onTap: _abrirMapa,
                 ),
                 const SizedBox(height: 20),
 
@@ -464,21 +485,6 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                 const _FieldLabel('Complemento / referencia (opcional)'),
                 const SizedBox(height: 6),
                 _ComplementoField(controller: _complementoCtrl),
-                const SizedBox(height: 20),
-
-                // Ubicacion exacta
-                const _FieldLabel('Ubicación exacta (opcional)'),
-                const SizedBox(height: 6),
-                SelectorUbicacionCliente(
-                  coordenadasIniciales: _coordenadas,
-                  onCambio: (punto) => setState(() => _coordenadas = punto),
-                  // Al marcar en el mapa se rellena la direccion de arriba,
-                  // para que el texto y el punto no se contradigan.
-                  onDireccionSugerida: (texto) => setState(() {
-                    _addressCtrl.text = texto;
-                    _errors.remove('address');
-                  }),
-                ),
                 const SizedBox(height: 32),
 
                 // Botón Agendar
@@ -916,70 +922,6 @@ class _CiudadDropdown extends StatelessWidget {
   }
 }
 
-class _AddressField extends StatefulWidget {
-  const _AddressField(
-      {required this.controller, required this.hint, this.errorText});
-  final TextEditingController controller;
-  final String hint;
-  final String? errorText;
-
-  @override
-  State<_AddressField> createState() => _AddressFieldState();
-}
-
-class _AddressFieldState extends State<_AddressField> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_rebuild);
-  }
-
-  void _rebuild() => setState(() {});
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_rebuild);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasText = widget.controller.text.isNotEmpty;
-    return TextField(
-      controller: widget.controller,
-      keyboardType: TextInputType.streetAddress,
-      style: GoogleFonts.inter(fontSize: 15, color: _kTextPrimary),
-      decoration: InputDecoration(
-        hintText: widget.hint,
-        hintStyle: GoogleFonts.inter(fontSize: 15, color: _kTextSecondary),
-        errorText: widget.errorText,
-        prefixIcon: const Icon(Icons.location_on_outlined,
-            size: 20, color: _kTextSecondary),
-        suffixIcon: hasText
-            ? GestureDetector(
-                onTap: () => widget.controller.clear(),
-                child:
-                    const Icon(Icons.close, size: 18, color: _kTextSecondary),
-              )
-            : null,
-        filled: true,
-        fillColor: _kSurface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kBorder)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kBorder)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kPrimary, width: 1.5)),
-      ),
-    );
-  }
-}
-
 class _ComplementoField extends StatelessWidget {
   const _ComplementoField({required this.controller});
   final TextEditingController controller;
@@ -1015,6 +957,93 @@ class _ComplementoField extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: _kPrimary, width: 1.5)),
       ),
+    );
+  }
+}
+
+/// La dirección, que ya no se teclea: se toca y se elige en el mapa.
+///
+/// Muestra lo elegido, o invita a elegirlo. Se comporta como un campo del
+/// formulario —misma altura, mismo borde, mismo error en rojo— para que no
+/// parezca un botón suelto en mitad de la pantalla.
+class _BotonUbicacion extends StatelessWidget {
+  const _BotonUbicacion({
+    required this.direccion,
+    required this.onTap,
+    this.errorText,
+  });
+
+  final String direccion;
+  final VoidCallback onTap;
+  final String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = FlutterFlowTheme.of(context);
+    final hayError = errorText != null;
+    final vacio = direccion.trim().isEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12.0),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+                horizontal: 12.0, vertical: 14.0),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F8F9),
+              borderRadius: BorderRadius.circular(12.0),
+              border: Border.all(
+                color: hayError ? tema.error : const Color(0xFFDFDFDF),
+                width: hayError ? 1.0 : 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  vacio ? Icons.map_outlined : Icons.place_rounded,
+                  size: 20.0,
+                  color: vacio ? tema.secondaryText : tema.primary,
+                ),
+                const SizedBox(width: 10.0),
+                Expanded(
+                  child: Text(
+                    vacio ? 'Seleccionar en el mapa' : direccion,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: tema.bodyMedium.override(
+                      font: GoogleFonts.inter(
+                        fontWeight: vacio ? FontWeight.w400 : FontWeight.w500,
+                      ),
+                      color: vacio ? tema.secondaryText : tema.primaryText,
+                      fontSize: 14.0,
+                      letterSpacing: 0.0,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    size: 20.0, color: tema.secondaryText),
+              ],
+            ),
+          ),
+        ),
+        if (hayError)
+          Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(4.0, 6.0, 0.0, 0.0),
+            child: Text(
+              errorText!,
+              style: tema.bodySmall.override(
+                font: GoogleFonts.inter(),
+                color: tema.error,
+                fontSize: 12.0,
+                letterSpacing: 0.0,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
