@@ -36,12 +36,29 @@ void main() {
   }
 
   group('qué ve el proveedor', () {
-    testWidgets('con punto ofrece llegar', (tester) async {
+    testWidgets('con punto, en un servicio aceptado, ofrece llegar',
+        (tester) async {
       await montar(tester,
           latitud: 4.6767, longitud: -74.0483, direccion: 'Ak 15 # 93-75');
 
       expect(find.text('Cómo llegar'), findsOneWidget);
       expect(find.byIcon(Icons.navigation_rounded), findsOneWidget);
+    });
+
+    testWidgets('con punto pero sin navegación, solo ofrece ver el sitio',
+        (tester) async {
+      // Tarjeta de un servicio entrante: el proveedor aún no lo ha aceptado,
+      // así que el enlace no arranca indicaciones. Decir «Cómo llegar» aquí
+      // prometía algo que el botón no hace.
+      await montar(tester,
+          latitud: 4.6767,
+          longitud: -74.0483,
+          direccion: 'Ak 15 # 93-75',
+          navegacion: false);
+
+      expect(find.text('Ver la ubicación en el mapa'), findsOneWidget);
+      expect(find.text('Cómo llegar'), findsNothing);
+      expect(find.byIcon(Icons.place_rounded), findsOneWidget);
     });
 
     testWidgets('sin punto, sigue pudiendo buscar la dirección',

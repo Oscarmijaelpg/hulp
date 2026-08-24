@@ -77,16 +77,26 @@ class EnlaceMapaWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.max,
             children: [
               Icon(
-                hayPunto ? Icons.navigation_rounded : Icons.travel_explore_rounded,
+                !hayPunto
+                    ? Icons.travel_explore_rounded
+                    : navegacion
+                        ? Icons.navigation_rounded
+                        : Icons.place_rounded,
                 size: 18.0,
                 color: tema.secondary,
               ),
               const SizedBox(width: 8.0),
               Expanded(
                 child: Text(
-                  hayPunto
-                      ? 'Cómo llegar'
-                      : 'Buscar la dirección en Google Maps',
+                  // El texto tiene que decir lo que el enlace hace de verdad.
+                  // Con punto pero sin navegacion —la tarjeta de un servicio
+                  // que aun no ha aceptado— «Cómo llegar» prometia unas
+                  // indicaciones que urlGoogleMaps no da: solo abre el sitio.
+                  !hayPunto
+                      ? 'Buscar la dirección en Google Maps'
+                      : navegacion
+                          ? 'Cómo llegar'
+                          : 'Ver la ubicación en el mapa',
                   style: tema.bodyMedium.override(
                     font: GoogleFonts.inter(fontWeight: FontWeight.w600),
                     color: tema.secondary,
