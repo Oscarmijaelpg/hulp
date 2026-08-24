@@ -129,6 +129,31 @@ ResultadoUbicacion analizarUbicacion(String? entrada) {
   );
 }
 
+/// Quita los tramos repetidos de una direccion.
+///
+/// La geocodificacion inversa de Google devuelve cosas como
+/// «Cra. 58 # 128B-90, Suba, Bogota, D.C., Bogota, Bogota, D.C., Colombia»:
+/// repite el municipio, el distrito y el departamento porque cada uno viene de
+/// un nivel administrativo distinto. Es correcto y es ilegible, y esto es lo
+/// que acaba leyendo el proveedor en su telefono.
+///
+/// Se conserva la PRIMERA aparicion de cada tramo, que mantiene el orden de lo
+/// concreto a lo general. No se toca nada mas: no es un normalizador de
+/// direcciones, solo quita duplicados exactos.
+String limpiarDireccion(String direccion) {
+  final vistos = <String>{};
+  final tramos = <String>[];
+  for (final crudo in direccion.split(',')) {
+    final tramo = crudo.trim();
+    if (tramo.isEmpty) continue;
+    // Se compara en minusculas para que «D.C.» y «d.c.» cuenten como el mismo,
+    // pero se guarda el original para no estropear las mayusculas.
+    if (!vistos.add(tramo.toLowerCase())) continue;
+    tramos.add(tramo);
+  }
+  return tramos.join(', ');
+}
+
 /// Enlace universal de Google Maps. No lleva clave y en movil abre la app
 /// nativa; en escritorio, el sitio web.
 ///
