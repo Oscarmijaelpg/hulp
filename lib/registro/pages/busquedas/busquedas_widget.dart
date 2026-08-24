@@ -268,6 +268,27 @@ class _BusquedasWidgetState extends State<BusquedasWidget> {
                                             listViewServiciosRowList =
                                             snapshot.data!;
 
+                                        // Sin este caso la pantalla se queda
+                                        // en blanco: un ListView con cero
+                                        // elementos no pinta nada, así que al
+                                        // entrar a buscar no había ni una
+                                        // línea que dijera qué hacer.
+                                        if (listViewServiciosRowList.isEmpty) {
+                                          final buscado =
+                                              _model.textController.text.trim();
+                                          return _BusquedaVacia(
+                                            titulo: buscado.isEmpty
+                                                ? 'Busca el servicio que necesitas'
+                                                : 'Sin resultados para «$buscado»',
+                                            detalle: buscado.isEmpty
+                                                ? 'Escribe arriba, por ejemplo «tuberías» o «instalación».'
+                                                : 'Prueba con otra palabra o mira las categorías del inicio.',
+                                            icono: buscado.isEmpty
+                                                ? Icons.search_rounded
+                                                : Icons.search_off_rounded,
+                                          );
+                                        }
+
                                         return ListView.separated(
                                           padding: EdgeInsets.fromLTRB(
                                             0,
@@ -558,7 +579,7 @@ class _BusquedasWidgetState extends State<BusquedasWidget> {
                                                                                 FlutterFlowTheme.of(context).titleSmall.fontStyle,
                                                                           ),
                                                                           color:
-                                                                              FlutterFlowTheme.of(context).tertiary,
+                                                                              FlutterFlowTheme.of(context).primary,
                                                                           letterSpacing:
                                                                               0.0,
                                                                           fontWeight: FlutterFlowTheme.of(context)
@@ -605,6 +626,9 @@ class _BusquedasWidgetState extends State<BusquedasWidget> {
                                                                             .routeName,
                                                                       );
                                                                     } else {
+                                                                      // Se recuerda para volver aqui tras el login.
+                                                                      ServiceStore
+                                                                          .set(listViewServiciosRow);
                                                                       context
                                                                           .pushNamed(
                                                                         LoginWidget
@@ -712,6 +736,56 @@ class _BusquedasWidgetState extends State<BusquedasWidget> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Lo que se ve cuando la búsqueda no devuelve nada: al entrar (todavía no se
+/// ha escrito) y cuando no hay coincidencias. Antes ambos casos eran una
+/// pantalla en blanco.
+class _BusquedaVacia extends StatelessWidget {
+  const _BusquedaVacia({
+    required this.titulo,
+    required this.detalle,
+    required this.icono,
+  });
+
+  final String titulo;
+  final String detalle;
+  final IconData icono;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = FlutterFlowTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 48.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icono, size: 40.0, color: tema.alternate),
+          const SizedBox(height: 12.0),
+          Text(
+            titulo,
+            textAlign: TextAlign.center,
+            style: tema.bodyLarge.override(
+              font: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              color: tema.primaryText,
+              letterSpacing: 0.0,
+            ),
+          ),
+          const SizedBox(height: 6.0),
+          Text(
+            detalle,
+            textAlign: TextAlign.center,
+            style: tema.bodyMedium.override(
+              font: GoogleFonts.inter(),
+              color: tema.secondaryText,
+              fontSize: 13.0,
+              letterSpacing: 0.0,
+            ),
+          ),
+        ],
       ),
     );
   }

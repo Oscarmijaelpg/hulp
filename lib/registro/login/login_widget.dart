@@ -1,6 +1,8 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/components/nueva_version_widget.dart';
+import '/registro/pages/service_booking/booking_args_store.dart';
+import '/registro/pages/service_booking/service_booking_form_page.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/flutter_flow/flutter_flow_widgets.dart';
@@ -26,6 +28,19 @@ class _LoginWidgetState extends State<LoginWidget> {
   late LoginModel _model;
 
   final scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// Adónde ir tras autenticar.
+  ///
+  /// Si el usuario llegó al login por pulsar «Agendar» sin sesión, se le
+  /// devuelve al formulario de ese servicio. Antes acababa siempre en la
+  /// portada y tenía que buscar otra vez lo que ya había elegido.
+  void _irADestinoTrasEntrar() {
+    if (ServiceStore.hayPendiente) {
+      context.goNamed(ServiceBookingFormPage.routeName);
+    } else {
+      context.goNamedAuth(HomePageWidget.routeName, context.mounted);
+    }
+  }
 
   @override
   void initState() {
@@ -454,8 +469,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                               currentUserUid,
                             );
 
-                            context.goNamedAuth(
-                                HomePageWidget.routeName, context.mounted);
+                            _irADestinoTrasEntrar();
                           } else {
                             GoRouter.of(context).prepareAuthEvent();
                             await authManager.signOut();
@@ -537,7 +551,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                             text: TextSpan(
                               children: [
                                 TextSpan(
-                                  text: 'No tienes una cuenta? ',
+                                  text: '¿No tienes una cuenta? ',
                                   style: FlutterFlowTheme.of(context)
                                       .bodyMedium
                                       .override(
@@ -696,8 +710,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                                 ),
                               );
 
-                              context.goNamedAuth(
-                                  HomePageWidget.routeName, context.mounted);
+                              _irADestinoTrasEntrar();
                             },
                             child: Container(
                               width: MediaQuery.sizeOf(context).width * 1.0,
@@ -782,8 +795,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                                 if (!context.mounted) {
                                   return;
                                 }
-                                context.goNamedAuth(
-                                    HomePageWidget.routeName, context.mounted);
+                                _irADestinoTrasEntrar();
                               },
                               child: Container(
                                 width: MediaQuery.sizeOf(context).width * 1.0,
@@ -923,6 +935,9 @@ class _LoginWidgetState extends State<LoginWidget> {
                             hoverColor: Colors.transparent,
                             highlightColor: Colors.transparent,
                             onTap: () async {
+                              // Como invitado no se agenda: se
+                              // descarta el servicio recordado.
+                              ServiceStore.limpiar();
                               context.goNamed(HomePageWidget.routeName);
                             },
                             child: Container(

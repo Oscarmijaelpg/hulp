@@ -551,44 +551,6 @@ class _HomePageWidgetState extends State<HomePageWidget> {
                         ),
                       ),
                       CuadriculaCategoriasWidget(),
-                      Padding(
-                        padding: EdgeInsetsDirectional.fromSTEB(
-                            20.0, 20.0, 20.0, 0.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.max,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // El título era pulsable y abría las reseñas de una
-                            // solicitud con el id escrito a mano
-                            // ('12e725fd-…', ticket 1217 de producción, que
-                            // existe y tiene una reseña real). Resto de pruebas
-                            // de FlutterFlow: cualquier cliente que tocara el
-                            // título veía la reseña de un servicio ajeno.
-                            Builder(
-                              builder: (context) => Text(
-                                                  'Servicios destacados',
-                                  style: FlutterFlowTheme.of(context)
-                                      .bodyMedium
-                                      .override(
-                                        font: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w600,
-                                          fontStyle:
-                                              FlutterFlowTheme.of(context)
-                                                  .bodyMedium
-                                                  .fontStyle,
-                                        ),
-                                        fontSize: 16.0,
-                                        letterSpacing: 0.0,
-                                        fontWeight: FontWeight.w600,
-                                        fontStyle: FlutterFlowTheme.of(context)
-                                            .bodyMedium
-                                            .fontStyle,
-                                      ),
-                                ),
-                            ),
-                          ],
-                        ),
-                      ),
                       Align(
                         alignment: AlignmentDirectional(-1.0, 0.0),
                         child: FutureBuilder<List<ServiciosRow>>(
@@ -616,7 +578,36 @@ class _HomePageWidgetState extends State<HomePageWidget> {
                             List<ServiciosRow> containerServiciosRowList =
                                 snapshot.data!;
 
-                            return Container(
+                            // El titulo vivia fuera del FutureBuilder, asi que
+                            // «Servicios destacados» se pintaba aunque no
+                            // hubiera ninguno: un encabezado con el hueco
+                            // vacio debajo. Ahora la seccion entera aparece
+                            // solo si hay algo que destacar.
+                            if (containerServiciosRowList.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.fromSTEB(
+                                      20.0, 20.0, 20.0, 0.0),
+                                  child: Text(
+                                    'Servicios destacados',
+                                    style: FlutterFlowTheme.of(context)
+                                        .bodyMedium
+                                        .override(
+                                          font: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w600),
+                                          color: FlutterFlowTheme.of(context)
+                                              .primaryText,
+                                          letterSpacing: 0.0,
+                                        ),
+                                  ),
+                                ),
+                                Container(
                               decoration: BoxDecoration(),
                               child: Padding(
                                 padding: EdgeInsetsDirectional.fromSTEB(
@@ -913,6 +904,8 @@ class _HomePageWidgetState extends State<HomePageWidget> {
                                   },
                                 ),
                               ),
+                                ),
+                              ],
                             );
                           },
                         ),

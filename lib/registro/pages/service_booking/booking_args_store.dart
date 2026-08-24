@@ -14,6 +14,15 @@ class ServiceStore {
   /// Llamar antes de navegar a ServiceBookingFormPage.
   static void set(ServiciosRow servicio) => _pending = servicio;
 
+  /// Si hay un servicio esperando. Se consulta sin consumirlo: al terminar el
+  /// login hay que saber si el usuario venía de darle a «Agendar» para
+  /// devolverlo ahí en vez de soltarlo en la portada, y el formulario lo
+  /// consumirá después.
+  static bool get hayPendiente => _pending != null;
+
+  /// Para cuando se abandona el flujo y el servicio ya no debe reaparecer.
+  static void limpiar() => _pending = null;
+
   /// Leer y limpiar en ServiceBookingFormPage.initState().
   static ServiciosRow? consume() {
     final v = _pending;

@@ -564,7 +564,7 @@ class _ServiciosWidgetState extends State<ServiciosWidget> {
                                                                       ),
                                                                       color: FlutterFlowTheme.of(
                                                                               context)
-                                                                          .tertiary,
+                                                                          .primary,
                                                                       fontSize:
                                                                           14.0,
                                                                       letterSpacing:
@@ -603,6 +603,12 @@ class _ServiciosWidgetState extends State<ServiciosWidget> {
                                                                     .routeName,
                                                               );
                                                             } else {
+                                                              // Se recuerda el
+                                                              // servicio para
+                                                              // volver aqui al
+                                                              // iniciar sesion.
+                                                              ServiceStore.set(
+                                                                  listViewServiciosRow);
                                                               context.pushNamed(
                                                                 LoginWidget
                                                                     .routeName,

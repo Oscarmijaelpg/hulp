@@ -5,6 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import '/components/selector_ubicacion_cliente.dart';
+import '/flutter_flow/ubicacion_helpers.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/database/tables/servicios.dart';
 import '/backend/supabase/database/tables/solicitudes_servicio.dart';
@@ -69,6 +71,10 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
 
   final _addressCtrl = TextEditingController();
   final _complementoCtrl = TextEditingController();
+
+  /// Punto exacto, opcional. La direccion escrita sigue siendo la
+  /// obligatoria: esto solo evita que el proveedor de vueltas.
+  Coordenadas? _coordenadas;
 
   bool _isSubmitting = false;
   final Map<String, String> _errors = {};
@@ -208,6 +214,10 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
         'hora': horaStr,
         'ubicacion': ubicacion,
         'ciudad_id': _selectedCiudad?.id,
+        // Van juntas o no van: la restriccion de la tabla rechaza media
+        // coordenada.
+        'latitud': _coordenadas?.latitud,
+        'longitud': _coordenadas?.longitud,
         'estado': 'entrantes',
         'estado_pago': 'pendiente',
         'tipo': 'app',
@@ -454,6 +464,15 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                 const _FieldLabel('Complemento / referencia (opcional)'),
                 const SizedBox(height: 6),
                 _ComplementoField(controller: _complementoCtrl),
+                const SizedBox(height: 20),
+
+                // Ubicacion exacta
+                const _FieldLabel('Ubicación exacta (opcional)'),
+                const SizedBox(height: 6),
+                SelectorUbicacionCliente(
+                  coordenadasIniciales: _coordenadas,
+                  onCambio: (punto) => setState(() => _coordenadas = punto),
+                ),
                 const SizedBox(height: 32),
 
                 // Botón Agendar
