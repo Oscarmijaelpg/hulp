@@ -88,6 +88,39 @@ String? elegirMejorDireccion(List<dynamic> resultados) {
   return null;
 }
 
+/// Una direccion resuelta desde un punto, con la ciudad que le corresponde.
+class DireccionDePunto {
+  const DireccionDePunto({required this.direccion, this.ciudad});
+  final String direccion;
+
+  /// Nombre de la ciudad segun Google («Bogota», «Cali»). Sirve para saber si
+  /// el punto cae en una ciudad con cobertura; puede venir null en zonas sin
+  /// municipio asignado.
+  final String? ciudad;
+}
+
+/// Compara nombres de ciudad de forma tolerante.
+///
+/// Google dice «Bogota» y la tabla de ciudades dice «Bogota D.C.»; tambien
+/// varian los acentos. Se normaliza y se comprueba si uno contiene al otro,
+/// que es suficiente para un catalogo de ciudades y evita fallar por un punto.
+bool mismaCiudad(String? a, String? b) {
+  String norm(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp('[áàä]'), 'a')
+      .replaceAll(RegExp('[éèë]'), 'e')
+      .replaceAll(RegExp('[íìï]'), 'i')
+      .replaceAll(RegExp('[óòö]'), 'o')
+      .replaceAll(RegExp('[úùü]'), 'u')
+      // Fuera puntos, espacios y todo lo demás: así «Bogotá D.C.» y «Bogota»
+      // acaban siendo «bogotadc» y «bogota», que uno contiene al otro.
+      .replaceAll(RegExp(r'[^a-z]'), '');
+  if (a == null || b == null) return false;
+  final x = norm(a), y = norm(b);
+  if (x.isEmpty || y.isEmpty) return false;
+  return x == y || x.contains(y) || y.contains(x);
+}
+
 class PlacesService {
   PlacesService(this.claveApi);
 
@@ -192,6 +225,54 @@ class PlacesService {
         direccion:
             limpiarDireccion(cuerpo['formattedAddress'] as String? ?? ''),
       );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Como `direccionDe`, pero devolviendo tambien la ciudad del punto.
+  ///
+  /// La ciudad sale de `locality`, y si no la hay se cae a
+  /// `administrative_area_level_2`: en algunos municipios pequenos Google no
+  /// rellena la primera.
+  Future<DireccionDePunto?> ubicacionDe(double latitud, double longitud) async {
+    if (claveApi.isEmpty) return null;
+    try {
+      final respuesta = await http.get(Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=$latitud,$longitud&language=es&key=$claveApi',
+      ));
+      if (respuesta.statusCode != 200) return null;
+
+      final cuerpo =
+          jsonDecode(utf8.decode(respuesta.bodyBytes)) as Map<String, dynamic>;
+      if (cuerpo['status'] != 'OK') return null;
+
+      final resultados = (cuerpo['results'] as List?) ?? const [];
+      final direccion = elegirMejorDireccion(resultados);
+      if (direccion == null) return null;
+
+      String? ciudad;
+      for (final tipo in const ['locality', 'administrative_area_level_2']) {
+        for (final r in resultados) {
+          final comps = ((r as Map<String, dynamic>)['address_components']
+              as List?) ??
+              const [];
+          for (final c in comps) {
+            final mapa = c as Map<String, dynamic>;
+            final tipos = (mapa['types'] as List?)?.whereType<String>() ??
+                const <String>[];
+            if (tipos.contains(tipo)) {
+              ciudad = mapa['long_name'] as String?;
+              break;
+            }
+          }
+          if (ciudad != null) break;
+        }
+        if (ciudad != null) break;
+      }
+
+      return DireccionDePunto(direccion: direccion, ciudad: ciudad);
     } catch (_) {
       return null;
     }

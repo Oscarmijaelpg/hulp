@@ -79,9 +79,14 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
 
   Future<void> _abrirMapa() async {
     FocusScope.of(context).unfocus();
+    // Se esperan las ciudades antes de abrir: el mapa las necesita para saber
+    // si el punto cae dentro de la cobertura.
+    final ciudades = await _ciudadesFuture;
+    if (!mounted) return;
     final r = await Navigator.of(context).push<UbicacionElegida>(
       MaterialPageRoute(
         builder: (_) => PantallaMapaUbicacion(
+          ciudades: ciudades,
           inicial: _coordenadas,
           direccionInicial: _addressCtrl.text,
         ),
@@ -91,7 +96,10 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
     setState(() {
       _coordenadas = r.coordenadas;
       _addressCtrl.text = r.direccion;
+      // La ciudad sale del mismo punto, asi que no puede contradecirlo.
+      _selectedCiudad = r.ciudad;
       _errors.remove('address');
+      _errors.remove('ciudad');
     });
   }
 
@@ -142,7 +150,11 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
     _errors.clear();
     if (_selectedDate == null) _errors['date'] = 'La fecha es obligatoria';
     if (_selectedTimeChip == null) _errors['time'] = 'La hora es obligatoria';
-    if (_selectedCiudad == null) _errors['ciudad'] = 'La ciudad es obligatoria';
+    // La ciudad ya no se elige: viene del punto. Si falta es que no se
+    // llego a confirmar una ubicacion valida.
+    if (_selectedCiudad == null) {
+      _errors['address'] = 'Selecciona la ubicación en el mapa';
+    }
     if (_addressCtrl.text.trim().isEmpty)
       _errors['address'] = 'La dirección es obligatoria';
 
@@ -451,21 +463,6 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                     _errors.remove('time');
                   }),
                   onMore: _pickTime,
-                ),
-                const SizedBox(height: 20),
-
-                // Ciudad
-                const _FieldLabel('Ciudad'),
-                const SizedBox(height: 6),
-                _CiudadDropdown(
-                  ciudadesFuture: _ciudadesFuture,
-                  value: _selectedCiudad,
-                  hasError: _errors.containsKey('ciudad'),
-                  errorText: _errors['ciudad'],
-                  onChanged: (val) => setState(() {
-                    _selectedCiudad = val;
-                    _errors.remove('ciudad');
-                  }),
                 ),
                 const SizedBox(height: 20),
 

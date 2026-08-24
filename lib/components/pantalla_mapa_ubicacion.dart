@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '/backend/supabase/database/tables/ciudades.dart';
 import '/environment_values.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/places_service.dart';
@@ -12,9 +13,17 @@ import '/flutter_flow/ubicacion_helpers.dart';
 
 /// Lo que devuelve la pantalla: el punto y la dirección que le corresponde.
 class UbicacionElegida {
-  const UbicacionElegida({required this.coordenadas, required this.direccion});
+  const UbicacionElegida({
+    required this.coordenadas,
+    required this.direccion,
+    required this.ciudad,
+  });
   final Coordenadas coordenadas;
   final String direccion;
+
+  /// La fila de `ciudades` en la que cae el punto. Sale del propio mapa, no de
+  /// un desplegable aparte, asi que no puede contradecir a la direccion.
+  final CiudadesRow ciudad;
 }
 
 /// Pantalla completa para escoger dónde se presta el servicio.
@@ -29,7 +38,15 @@ class UbicacionElegida {
 /// GPS apagado, dentro de un edificio— arranca en Bogotá y se puede buscar la
 /// dirección, que es la salida para cuando el servicio no es donde estás.
 class PantallaMapaUbicacion extends StatefulWidget {
-  const PantallaMapaUbicacion({super.key, this.inicial, this.direccionInicial});
+  const PantallaMapaUbicacion({
+    super.key,
+    required this.ciudades,
+    this.inicial,
+    this.direccionInicial,
+  });
+
+  /// Las ciudades con cobertura. Si el punto cae fuera, no se deja confirmar.
+  final List<CiudadesRow> ciudades;
 
   /// Para volver a entrar y corregir sin empezar de cero.
   final Coordenadas? inicial;
@@ -54,6 +71,13 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
   bool _listo = false;
   List<SugerenciaLugar> _sugerencias = const [];
   String? _aviso;
+
+  /// La ciudad de la tabla en la que cae el punto, si hay alguna.
+  CiudadesRow? _ciudad;
+
+  /// Lo que dijo Google, para poder nombrarla en el aviso aunque no tengamos
+  /// cobertura alli.
+  String? _ciudadDetectada;
 
   @override
   void initState() {
@@ -85,11 +109,16 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
   /// Al soltar el mapa: se pregunta qué hay en el centro.
   Future<void> _resolverCentro() async {
     setState(() => _resolviendo = true);
-    final texto = await _places.direccionDe(_centro.latitude, _centro.longitude);
+    final r = await _places.ubicacionDe(_centro.latitude, _centro.longitude);
     if (!mounted) return;
     setState(() {
       _resolviendo = false;
-      if (texto != null) _direccion = texto;
+      if (r == null) return;
+      _direccion = r.direccion;
+      _ciudadDetectada = r.ciudad;
+      _ciudad = widget.ciudades
+          .where((c) => mismaCiudad(c.nombre, r.ciudad))
+          .firstOrNull;
     });
   }
 
@@ -166,19 +195,28 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
       _centro = LatLng(lugar.coordenadas.latitud, lugar.coordenadas.longitud);
     });
     await _mover(_centro);
+    // La sugerencia trae direccion pero no la ciudad del catalogo: se resuelve
+    // igual que si se hubiera movido el mapa.
+    await _resolverCentro();
   }
 
   void _confirmar() {
+    final ciudad = _ciudad;
+    if (ciudad == null) return;
     Navigator.of(context).pop(UbicacionElegida(
       coordenadas: Coordenadas(_centro.latitude, _centro.longitude),
       direccion: _direccion,
+      ciudad: ciudad,
     ));
   }
 
   @override
   Widget build(BuildContext context) {
     final tema = FlutterFlowTheme.of(context);
-    final puedeConfirmar = _listo && !_resolviendo && _direccion.isNotEmpty;
+    // Sin ciudad con cobertura no se confirma: agendar un servicio donde no
+    // hay proveedores deja al cliente esperando algo que no va a llegar.
+    final puedeConfirmar =
+        _listo && !_resolviendo && _direccion.isNotEmpty && _ciudad != null;
 
     return Scaffold(
       backgroundColor: tema.secondaryBackground,
@@ -257,6 +295,12 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
                 _PanelInferior(
                   direccion: _direccion,
                   resolviendo: _resolviendo,
+                  ciudad: _ciudad?.nombre,
+                  sinCobertura: _listo &&
+                      !_resolviendo &&
+                      _direccion.isNotEmpty &&
+                      _ciudad == null,
+                  ciudadDetectada: _ciudadDetectada,
                   aviso: _aviso,
                   habilitado: puedeConfirmar,
                   onConfirmar: _confirmar,
@@ -335,6 +379,9 @@ class _PanelInferior extends StatelessWidget {
   const _PanelInferior({
     required this.direccion,
     required this.resolviendo,
+    required this.ciudad,
+    required this.sinCobertura,
+    required this.ciudadDetectada,
     required this.aviso,
     required this.habilitado,
     required this.onConfirmar,
@@ -342,6 +389,9 @@ class _PanelInferior extends StatelessWidget {
 
   final String direccion;
   final bool resolviendo;
+  final String? ciudad;
+  final bool sinCobertura;
+  final String? ciudadDetectada;
   final String? aviso;
   final bool habilitado;
   final VoidCallback onConfirmar;
@@ -394,6 +444,46 @@ class _PanelInferior extends StatelessWidget {
               ),
             ],
           ),
+          if (ciudad != null && !sinCobertura)
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(26.0, 4.0, 0.0, 0.0),
+              child: Text(
+                '$ciudad · con cobertura',
+                style: tema.bodySmall.override(
+                  font: GoogleFonts.inter(),
+                  color: tema.secondaryText,
+                  fontSize: 12.0,
+                  letterSpacing: 0.0,
+                ),
+              ),
+            ),
+          if (sinCobertura)
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(0.0, 8.0, 0.0, 0.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline_rounded,
+                      size: 16.0, color: tema.error),
+                  const SizedBox(width: 6.0),
+                  Expanded(
+                    child: Text(
+                      ciudadDetectada == null
+                          ? 'Todavía no damos servicio en este punto. Elige '
+                              'otro dentro de una ciudad con cobertura.'
+                          : 'Todavía no damos servicio en $ciudadDetectada. '
+                              'Elige un punto en una ciudad con cobertura.',
+                      style: tema.bodySmall.override(
+                        font: GoogleFonts.inter(),
+                        color: tema.error,
+                        fontSize: 12.0,
+                        letterSpacing: 0.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (aviso != null)
             Padding(
               padding: const EdgeInsetsDirectional.fromSTEB(0.0, 6.0, 0.0, 0.0),
