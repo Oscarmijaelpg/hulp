@@ -1,2 +1,6 @@
 #include "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
+
+// Clave de Google Maps. El Info.plist la lee como
+// $(MAPS_API_KEY) y el AppDelegate se la pasa a GMSServices.
+MAPS_API_KEY=AIzaSyC8Ft4iCpxcoo8WmzpCo9Y5gcRKOeDKaiA
