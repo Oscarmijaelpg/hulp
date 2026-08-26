@@ -4,7 +4,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '/components/pantalla_mapa_ubicacion.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/ubicacion_helpers.dart';
@@ -799,122 +798,6 @@ class _TimeChip extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CiudadDropdown extends StatelessWidget {
-  const _CiudadDropdown({
-    required this.ciudadesFuture,
-    required this.value,
-    required this.hasError,
-    required this.onChanged,
-    this.errorText,
-  });
-  final Future<List<CiudadesRow>> ciudadesFuture;
-  final CiudadesRow? value;
-  final bool hasError;
-  final String? errorText;
-  final ValueChanged<CiudadesRow?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<CiudadesRow>>(
-      future: ciudadesFuture,
-      builder: (context, snapshot) {
-        final ciudades = snapshot.data ?? [];
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
-        final hasQueryError = snapshot.hasError;
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: _kSurface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: hasError ? _kError : _kBorder,
-                  width: hasError ? 1.5 : 1.0,
-                ),
-              ),
-              child: hasQueryError
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: Row(children: [
-                        const Icon(Icons.location_city_outlined,
-                            size: 20, color: _kError),
-                        const SizedBox(width: 10),
-                        Text('Error al cargar ciudades',
-                            style: GoogleFonts.inter(
-                                fontSize: 15, color: _kError)),
-                      ]),
-                    )
-                  : isLoading
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          child: Row(children: [
-                            Icon(Icons.location_city_outlined,
-                                size: 20, color: _kTextSecondary),
-                            SizedBox(width: 10),
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: _kAccent),
-                            ),
-                            SizedBox(width: 10),
-                            Text('Cargando ciudades...',
-                                style: TextStyle(
-                                    fontSize: 15, color: _kTextSecondary)),
-                          ]),
-                        )
-                      : DropdownButtonHideUnderline(
-                          child: DropdownButton<CiudadesRow>(
-                            value: value,
-                            hint: Row(children: [
-                              const Icon(Icons.location_city_outlined,
-                                  size: 20, color: _kTextSecondary),
-                              const SizedBox(width: 10),
-                              Text('Selecciona una ciudad',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 15, color: _kTextSecondary)),
-                            ]),
-                            icon: const Icon(Icons.keyboard_arrow_down,
-                                color: _kTextSecondary, size: 20),
-                            isExpanded: true,
-                            style: GoogleFonts.inter(
-                                fontSize: 15, color: _kTextPrimary),
-                            dropdownColor: Colors.white,
-                            items: ciudades
-                                .map((c) => DropdownMenuItem<CiudadesRow>(
-                                      value: c,
-                                      child: Text(c.nombre),
-                                    ))
-                                .toList(),
-                            onChanged: onChanged,
-                            selectedItemBuilder: (context) => ciudades.map((c) {
-                              return Row(children: [
-                                const Icon(Icons.location_city_outlined,
-                                    size: 20, color: _kTextSecondary),
-                                const SizedBox(width: 10),
-                                Text(c.nombre,
-                                    style: GoogleFonts.inter(
-                                        fontSize: 15, color: _kTextPrimary)),
-                              ]);
-                            }).toList(),
-                          ),
-                        ),
-            ),
-            if (errorText != null) ...[
-              const SizedBox(height: 4),
-              Text(errorText!,
-                  style: GoogleFonts.inter(fontSize: 12, color: _kError)),
-            ],
-          ],
-        );
-      },
     );
   }
 }
