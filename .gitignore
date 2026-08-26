@@ -50,3 +50,10 @@ app.*.map.json
 
 # Environment credentials - never commit API keys
 assets/environment_values/environment*.json
+
+# Credenciales de entorno. Se recrean a mano en cada maquina, y en el CI
+# desde el secret ENVIRONMENT_JSON_TALENTO. Estuvieron rastreados desde el
+# commit inicial, con la clave privada de Wompi dentro.
+assets/environment_values/environment.json
+assets/environment_values/environment_test.json
+supabase/.temp/
