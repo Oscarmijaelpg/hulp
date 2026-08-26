@@ -7,26 +7,33 @@
 //   https://www.hulpweb.com/assets/assets/environment_values/environment.json
 // y en las apps moviles sacarlas del bundle con herramientas corrientes.
 //
-// Esta funcion es la unica que conoce esas dos claves. Las apps le piden la
-// operacion y ella decide si procede.
+// Esta funcion es la unica que conoce esas dos claves.
 //
-// NO cubre consultar el estado de una transaccion: eso usa la clave PUBLICA,
-// que no es secreta, y sigue haciendose desde el cliente como hasta ahora.
-// Tampoco get_acceptance_token ni tokenize_card, que tambien son de la publica.
+// Cubre los NUEVE puntos del codigo que usaban la clave privada:
+//
+//   crear_cobro                  create_transaction.dart  (admin, usuarios, talento)
+//   crear_cobro_bancolombia      create_bancolombia_transfer_transaction.dart
+//   registrar_metodo_pago CARD                 create_payment_source.dart
+//   registrar_metodo_pago NEQUI                nequi_verification_button.dart
+//   registrar_metodo_pago DAVIPLATA            daviplata_verification_widget.dart
+//   registrar_metodo_pago BANCOLOMBIA_TRANSFER bancolombia_verification_widget.dart
+//                                              y api_calls.dart
+//
+// NO cubre, y es a proposito: consultar el estado de una transaccion,
+// get_acceptance_token, tokenize_card y los endpoints /tokens/*. Todos usan la
+// clave PUBLICA, que esta pensada para viajar en el cliente. Moverlos no
+// aportaria nada.
 //
 // Desplegar (desde la raiz del repo de talento):
 //   supabase functions deploy wompi --project-ref <ref>
 //     produccion  zexegravzidwloxeimxx
 //     test        ptafsiwlhxomgqmdmidf
 //
-// Secrets que hay que cargar en CADA proyecto, con sus valores propios
-// (produccion las prv_prod_/prod_integrity_, test las de sandbox):
+// Secrets, con valores propios por proyecto:
 //   supabase secrets set WOMPI_PRIVATE_KEY=... WOMPI_INTEGRITY_KEY=... \
 //     WOMPI_ENTORNO=produccion|sandbox --project-ref <ref>
 //
-// SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los inyecta la plataforma sola.
-//
-// Se usa service role para leer la solicitud, asi que la autorizacion se
+// Se usa service role para leer precios y correos, asi que la autorizacion se
 // comprueba a mano y de forma explicita: RLS no protege aqui.
 // ============================================================================
 
@@ -40,7 +47,10 @@ const CORS = {
 
 const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json' };
 
-/** Respuesta JSON con la forma que ya esperan las apps. */
+/** Los cuatro tipos que las apps registran hoy. Lista blanca a proposito. */
+const TIPOS_VALIDOS = ['CARD', 'NEQUI', 'DAVIPLATA', 'BANCOLOMBIA_TRANSFER'] as const;
+type TipoMetodo = typeof TIPOS_VALIDOS[number];
+
 function responder(cuerpo: unknown, status = 200): Response {
   return new Response(JSON.stringify(cuerpo), { status, headers: JSON_HEADERS });
 }
@@ -53,6 +63,81 @@ function error(mensaje: string, status = 400, extra: Record<string, unknown> = {
 const BASE_WOMPI = Deno.env.get('WOMPI_ENTORNO') === 'produccion'
   ? 'https://production.wompi.co/v1'
   : 'https://sandbox.wompi.co/v1';
+
+// deno-lint-ignore no-explicit-any
+type Cliente = any;
+
+/** Correo de una cuenta, siempre desde la base y nunca desde el cliente. */
+async function correoDe(admin: Cliente, uid: string): Promise<string | null> {
+  const { data } = await admin
+    .from('usuarios')
+    .select('correo_electronico')
+    .eq('id', uid)
+    .maybeSingle();
+  const correo = data?.correo_electronico?.trim().toLowerCase();
+  return correo || null;
+}
+
+/**
+ * Comprueba que un payment_source_id es del cliente indicado.
+ *
+ * Hay DOS tablas con payment_source_id y ambas se usan: `metodos_pago` guarda
+ * Nequi, DaviPlata y Bancolombia, y `tarjetas_guardadas` las tarjetas. Mirar
+ * solo una rechazaria pagos perfectamente validos.
+ */
+async function esDelCliente(
+  admin: Cliente,
+  paymentSourceId: string | number,
+  usuarioId: string,
+): Promise<boolean> {
+  const { data: m } = await admin
+    .from('metodos_pago')
+    .select('id')
+    .eq('usuario_id', usuarioId)
+    .eq('payment_source_id', paymentSourceId)
+    .maybeSingle();
+  if (m) return true;
+
+  const { data: t } = await admin
+    .from('tarjetas_guardadas')
+    .select('id')
+    .eq('usuario_id', usuarioId)
+    .eq('payment_source_id', String(paymentSourceId))
+    .maybeSingle();
+  return !!t;
+}
+
+/** El predeterminado del cliente, mirando tambien en las dos tablas. */
+async function predeterminadoDe(admin: Cliente, usuarioId: string): Promise<string | null> {
+  const { data: m } = await admin
+    .from('metodos_pago')
+    .select('payment_source_id')
+    .eq('usuario_id', usuarioId)
+    .eq('es_predeterminado', true)
+    .maybeSingle();
+  if (m?.payment_source_id) return String(m.payment_source_id);
+
+  const { data: t } = await admin
+    .from('tarjetas_guardadas')
+    .select('payment_source_id')
+    .eq('usuario_id', usuarioId)
+    .eq('predeterminada', true)
+    .eq('activa', true)
+    .maybeSingle();
+  return t?.payment_source_id ? String(t.payment_source_id) : null;
+}
+
+/** Traduce el error de Wompi a algo legible sin perder el detalle. */
+async function fallo(respuesta: Response, contexto: string): Promise<Response> {
+  const datos = await respuesta.json().catch(() => ({}));
+  console.error(`Wompi rechazo ${contexto}:`, respuesta.status, JSON.stringify(datos));
+  return responder({
+    success: false,
+    error: datos?.error?.reason ?? datos?.error?.type ?? `Error en ${contexto}`,
+    statusCode: respuesta.status,
+    details: datos,
+  }, 502);
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -70,7 +155,6 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return error('Falta Authorization', 401);
 
-    // Cliente con el token de quien llama: sirve para saber QUIEN es.
     const comoUsuario = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -79,19 +163,25 @@ Deno.serve(async (req) => {
     const { data: { user }, error: errAuth } = await comoUsuario.auth.getUser();
     if (errAuth || !user) return error('Sesion invalida', 401);
 
-    // Cliente con service role: lee precios y correos sin depender de RLS.
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    const cabeceraWompi = {
+      'Authorization': `Bearer ${clavePrivada}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
     const cuerpo = await req.json().catch(() => ({}));
     const accion = cuerpo.accion;
 
     // ------------------------------------------------------------------
-    // crear_cobro: reemplaza createTransaction en los tres proyectos.
+    // Las dos acciones de cobro comparten toda la validacion: cargar la
+    // solicitud, ver quien pide el cobro y cuanto vale de verdad.
     // ------------------------------------------------------------------
-    if (accion === 'crear_cobro') {
+    if (accion === 'crear_cobro' || accion === 'crear_cobro_bancolombia') {
       const { solicitud_id, acceptance_token } = cuerpo;
       if (!solicitud_id) return error('Falta solicitud_id', 400, { field: 'solicitud_id' });
       if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
@@ -107,24 +197,23 @@ Deno.serve(async (req) => {
       }
       if (!solicitud) return error('La solicitud no existe', 404);
 
-      // Autorizacion explicita. Puede cobrar el admin, el cliente dueño de la
-      // solicitud, o el proveedor asignado — nadie mas.
+      // Puede cobrar el admin, el cliente dueño de la solicitud o el proveedor
+      // asignado. Nadie mas.
       const { data: quien } = await admin
         .from('usuarios')
         .select('rol')
         .eq('id', user.id)
         .maybeSingle();
 
-      const esAdmin = quien?.rol === 'admin';
-      const esCliente = user.id === solicitud.usuario_id;
-      const esProveedor = user.id === solicitud.profesional_id;
-      if (!esAdmin && !esCliente && !esProveedor) {
+      const autorizado = quien?.rol === 'admin'
+        || user.id === solicitud.usuario_id
+        || user.id === solicitud.profesional_id;
+      if (!autorizado) {
         console.warn(`Cobro rechazado: ${user.id} no participa en ${solicitud_id}`);
         return error('No autorizado para cobrar esta solicitud', 403);
       }
 
-      // Evita el doble cobro: sin esto, dos toques seguidos en el boton pasan
-      // dos veces por Wompi.
+      // Sin esto, dos toques seguidos en el boton pasan dos veces por Wompi.
       if (solicitud.estado_pago === 'pagado' && cuerpo.reintentar !== true) {
         return error('Esta solicitud ya figura pagada', 409, { estado_pago: solicitud.estado_pago });
       }
@@ -134,51 +223,76 @@ Deno.serve(async (req) => {
         return error('La solicitud no tiene un precio valido', 422, { montoEnCentavos });
       }
 
-      // El metodo de pago tiene que ser del cliente de ESTA solicitud, no de
-      // quien llama: el admin cobra en nombre del cliente.
-      let paymentSourceId = cuerpo.payment_source_id ?? null;
-      if (paymentSourceId) {
-        const { data: metodo } = await admin
-          .from('metodos_pago')
-          .select('payment_source_id')
-          .eq('usuario_id', solicitud.usuario_id)
-          .eq('payment_source_id', paymentSourceId)
-          .maybeSingle();
-        if (!metodo) return error('El metodo de pago no es de este cliente', 403);
-      } else {
-        const { data: metodo } = await admin
-          .from('metodos_pago')
-          .select('payment_source_id')
-          .eq('usuario_id', solicitud.usuario_id)
-          .eq('es_predeterminado', true)
-          .maybeSingle();
-        if (!metodo?.payment_source_id) {
-          return error('El cliente no tiene metodo de pago predeterminado', 422);
-        }
-        paymentSourceId = metodo.payment_source_id;
-      }
-
-      const { data: cliente } = await admin
-        .from('usuarios')
-        .select('correo_electronico')
-        .eq('id', solicitud.usuario_id)
-        .maybeSingle();
-      const correo = cliente?.correo_electronico?.trim().toLowerCase();
+      const correo = await correoDe(admin, solicitud.usuario_id);
       if (!correo) return error('El cliente no tiene correo registrado', 422);
 
       const moneda = 'COP';
       const referencia = `${solicitud.id}-${Date.now()}`;
+
+      // --- transferencia Bancolombia, sin fuente de pago guardada ---
+      if (accion === 'crear_cobro_bancolombia') {
+        // El codigo actual no manda signature en este flujo. Se replica tal
+        // cual: anadirla ahora cambiaria el comportamiento de un camino que
+        // no se puede probar sin una cuenta de Bancolombia de verdad.
+        const respuesta = await fetch(`${BASE_WOMPI}/transactions`, {
+          method: 'POST',
+          headers: cabeceraWompi,
+          body: JSON.stringify({
+            acceptance_token: String(acceptance_token).trim(),
+            amount_in_cents: montoEnCentavos,
+            currency: moneda,
+            customer_email: correo,
+            reference: referencia,
+            payment_method: {
+              type: 'BANCOLOMBIA_TRANSFER',
+              payment_description: cuerpo.payment_description ?? 'Pago con Bancolombia',
+              user_type: 'PERSON',
+            },
+          }),
+        });
+        if (!respuesta.ok) return await fallo(respuesta, 'la transferencia Bancolombia');
+
+        const datos = await respuesta.json();
+        const t = datos.data ?? {};
+        console.log(`Transferencia creada ${t.id} · solicitud ${solicitud.id} · ${montoEnCentavos}`);
+        return responder({
+          success: true,
+          transactionId: t.id,
+          status: t.status,
+          statusMessage: t.status_message ?? '',
+          amount: t.amount_in_cents,
+          currency: t.currency,
+          customerEmail: t.customer_email,
+          reference: t.reference,
+          createdAt: t.created_at,
+          finalizedAt: t.finalized_at,
+          paymentMethod: t.payment_method,
+          fullData: t,
+        });
+      }
+
+      // --- cobro contra una fuente de pago guardada ---
+      let paymentSourceId = cuerpo.payment_source_id ?? null;
+      if (paymentSourceId) {
+        // Tiene que ser del cliente de ESTA solicitud, no de quien llama: el
+        // admin cobra en nombre del cliente.
+        if (!await esDelCliente(admin, paymentSourceId, solicitud.usuario_id)) {
+          return error('El metodo de pago no es de este cliente', 403);
+        }
+      } else {
+        paymentSourceId = await predeterminadoDe(admin, solicitud.usuario_id);
+        if (!paymentSourceId) {
+          return error('El cliente no tiene metodo de pago predeterminado', 422);
+        }
+      }
+
       const firma = await sha256Hex(
         cadenaDeFirma(referencia, montoEnCentavos, moneda, claveIntegridad),
       );
 
       const respuesta = await fetch(`${BASE_WOMPI}/transactions`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${clavePrivada}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: cabeceraWompi,
         body: JSON.stringify({
           amount_in_cents: montoEnCentavos,
           currency: moneda,
@@ -190,19 +304,9 @@ Deno.serve(async (req) => {
           signature: firma,
         }),
       });
+      if (!respuesta.ok) return await fallo(respuesta, 'la transaccion');
 
-      const datos = await respuesta.json().catch(() => ({}));
-      if (!respuesta.ok) {
-        console.error('Wompi rechazo la transaccion:', respuesta.status, JSON.stringify(datos));
-        return responder({
-          success: false,
-          error: datos?.error?.reason ?? datos?.error?.type ?? 'Error al crear transaccion',
-          statusCode: respuesta.status,
-          details: datos,
-          phase: 'CREATION',
-        }, 502);
-      }
-
+      const datos = await respuesta.json();
       const t = datos.data ?? {};
       console.log(`Cobro creado ${t.id} · solicitud ${solicitud.id} · ${montoEnCentavos} · ${t.status}`);
 
@@ -226,108 +330,51 @@ Deno.serve(async (req) => {
     }
 
     // ------------------------------------------------------------------
-    // registrar_metodo_pago: reemplaza createPaymentSource (tarjeta).
-    // El token de tarjeta lo genera el cliente con la clave PUBLICA.
+    // registrar_metodo_pago: los cuatro tipos por el mismo camino.
+    //
+    // Todos van al mismo endpoint y solo cambian un par de campos, asi que
+    // una accion por tipo seria repetir la misma validacion cuatro veces.
+    // El token siempre lo genera el cliente con la clave PUBLICA.
     // ------------------------------------------------------------------
     if (accion === 'registrar_metodo_pago') {
-      const { card_token, acceptance_token } = cuerpo;
-      if (!card_token) return error('Falta card_token', 400, { field: 'card_token' });
-      if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
-
-      // El metodo se registra siempre a nombre de quien llama, con el correo
-      // que tiene en la base: asi nadie registra tarjetas para otra cuenta.
-      const { data: yo } = await admin
-        .from('usuarios')
-        .select('correo_electronico')
-        .eq('id', user.id)
-        .maybeSingle();
-      const correo = (yo?.correo_electronico ?? user.email)?.trim().toLowerCase();
-      if (!correo) return error('La cuenta no tiene correo registrado', 422);
-
-      const respuesta = await fetch(`${BASE_WOMPI}/payment_sources`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${clavePrivada}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'CARD',
-          token: String(card_token).trim(),
-          customer_email: correo,
-          acceptance_token: String(acceptance_token).trim(),
-        }),
-      });
-
-      const datos = await respuesta.json().catch(() => ({}));
-      if (!respuesta.ok) {
-        console.error('Wompi rechazo el payment source:', respuesta.status, JSON.stringify(datos));
-        return responder({
-          success: false,
-          error: datos?.error?.reason ?? datos?.error?.type ?? 'Error al registrar el metodo de pago',
-          statusCode: respuesta.status,
-          details: datos,
-        }, 502);
+      const { tipo, token, acceptance_token } = cuerpo;
+      if (!tipo) return error('Falta tipo', 400, { field: 'tipo' });
+      if (!TIPOS_VALIDOS.includes(tipo as TipoMetodo)) {
+        return error(`Tipo no soportado: ${tipo}`, 400, { field: 'tipo', validos: TIPOS_VALIDOS });
       }
-
-      const p = datos.data ?? {};
-      return responder({
-        success: true,
-        paymentSourceId: p.id,
-        status: p.status,
-        type: p.type,
-        customerEmail: p.customer_email,
-        fullData: p,
-      });
-    }
-
-    // ------------------------------------------------------------------
-    // registrar_metodo_pago_bancolombia: reemplaza tanto
-    // createBancolombiaTransferTransaction como la llamada suelta de
-    // api_calls.dart ("Bancolombia paymentsources PROD").
-    // ------------------------------------------------------------------
-    if (accion === 'registrar_metodo_pago_bancolombia') {
-      const { token, acceptance_token, accept_personal_auth } = cuerpo;
       if (!token) return error('Falta token', 400, { field: 'token' });
       if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
 
-      const { data: yo } = await admin
-        .from('usuarios')
-        .select('correo_electronico')
-        .eq('id', user.id)
-        .maybeSingle();
-      const correo = (yo?.correo_electronico ?? user.email)?.trim().toLowerCase();
+      // El metodo se registra siempre a nombre de quien llama y con el correo
+      // que tiene en la base: asi nadie registra medios de pago en otra cuenta.
+      const correo = (await correoDe(admin, user.id)) ?? user.email?.trim().toLowerCase();
       if (!correo) return error('La cuenta no tiene correo registrado', 422);
+
+      // deno-lint-ignore no-explicit-any
+      const payload: Record<string, any> = {
+        type: tipo,
+        token: String(token).trim(),
+        customer_email: correo,
+        acceptance_token: String(acceptance_token).trim(),
+      };
+      // CARD es el unico que no lleva autorizacion de datos personales.
+      if (tipo !== 'CARD') {
+        payload.accept_personal_auth = cuerpo.accept_personal_auth ?? '';
+      }
+      if (tipo === 'BANCOLOMBIA_TRANSFER') {
+        payload.payment_description = cuerpo.payment_description ?? 'Pago de servicio Hulp';
+      }
 
       const respuesta = await fetch(`${BASE_WOMPI}/payment_sources`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${clavePrivada}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'BANCOLOMBIA_TRANSFER',
-          token: String(token).trim(),
-          payment_description: cuerpo.payment_description ?? 'Pago de servicio Hulp',
-          customer_email: correo,
-          acceptance_token: String(acceptance_token).trim(),
-          accept_personal_auth: accept_personal_auth ?? '',
-        }),
+        headers: cabeceraWompi,
+        body: JSON.stringify(payload),
       });
+      if (!respuesta.ok) return await fallo(respuesta, `el registro de ${tipo}`);
 
-      const datos = await respuesta.json().catch(() => ({}));
-      if (!respuesta.ok) {
-        console.error('Wompi rechazo el payment source Bancolombia:', respuesta.status, JSON.stringify(datos));
-        return responder({
-          success: false,
-          error: datos?.error?.reason ?? datos?.error?.type ?? 'Error al registrar la cuenta',
-          statusCode: respuesta.status,
-          details: datos,
-        }, 502);
-      }
-
+      const datos = await respuesta.json();
       const p = datos.data ?? {};
+      console.log(`Metodo ${tipo} registrado ${p.id} · usuario ${user.id}`);
       return responder({
         success: true,
         paymentSourceId: p.id,

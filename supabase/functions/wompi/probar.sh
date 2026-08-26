@@ -48,6 +48,18 @@ probar 'crear_cobro sin solicitud_id' 400 "$JWT" '{"accion":"crear_cobro","accep
 probar 'solicitud inexistente'        404 "$JWT" \
   '{"accion":"crear_cobro","solicitud_id":"00000000-0000-0000-0000-000000000000","acceptance_token":"x"}'
 
+echo
+echo "=== registrar_metodo_pago: la lista blanca de tipos ==="
+probar 'tipo no soportado (PSE)'      400 "$JWT"   '{"accion":"registrar_metodo_pago","tipo":"PSE","token":"x","acceptance_token":"y"}'
+probar 'tipo inventado'               400 "$JWT"   '{"accion":"registrar_metodo_pago","tipo":"CRIPTO","token":"x","acceptance_token":"y"}'
+probar 'sin tipo'                     400 "$JWT"   '{"accion":"registrar_metodo_pago","token":"x","acceptance_token":"y"}'
+probar 'CARD sin token'               400 "$JWT"   '{"accion":"registrar_metodo_pago","tipo":"CARD","acceptance_token":"y"}'
+
+echo
+echo "=== crear_cobro_bancolombia: mismas defensas que crear_cobro ==="
+probar 'bancolombia sin solicitud_id' 400 "$JWT"   '{"accion":"crear_cobro_bancolombia","acceptance_token":"x"}'
+probar 'bancolombia, solicitud falsa' 404 "$JWT"   '{"accion":"crear_cobro_bancolombia","solicitud_id":"00000000-0000-0000-0000-000000000000","acceptance_token":"x"}'
+
 if [ -n "$SOLICITUD" ]; then
   echo
   echo "=== con una solicitud real: $SOLICITUD ==="

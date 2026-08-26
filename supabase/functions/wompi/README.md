@@ -6,17 +6,27 @@ Centraliza las operaciones de Wompi que necesitan la **clave privada** y la
 
 ## Qué cubre y qué no
 
-| operación | dónde está ahora | por qué |
-|---|---|---|
-| crear cobro | **esta función** | usa la clave privada |
-| registrar tarjeta | **esta función** | usa la clave privada |
-| registrar cuenta Bancolombia | **esta función** | usa la clave privada |
-| consultar estado de transacción | sigue en el cliente | usa la clave **pública** |
-| `get_acceptance_token` | sigue en el cliente | usa la clave **pública** |
-| `tokenize_card` | sigue en el cliente | usa la clave **pública** |
+Los **nueve** puntos del código que usaban la clave privada:
 
-Las tres últimas no son secretas: la clave pública está pensada para viajar en
-el cliente. Moverlas no aportaría nada y complicaría el cambio.
+| acción | reemplaza | proyectos |
+|---|---|---|
+| `crear_cobro` | `create_transaction.dart` | admin, usuarios, talento |
+| `crear_cobro_bancolombia` | `create_bancolombia_transfer_transaction.dart` | usuarios |
+| `registrar_metodo_pago` `CARD` | `create_payment_source.dart` | usuarios |
+| `registrar_metodo_pago` `NEQUI` | `nequi_verification_button.dart` | usuarios |
+| `registrar_metodo_pago` `DAVIPLATA` | `daviplata_verification_widget.dart` | usuarios |
+| `registrar_metodo_pago` `BANCOLOMBIA_TRANSFER` | `bancolombia_verification_widget.dart` y `api_calls.dart` | usuarios |
+
+Los cuatro tipos van por la misma acción: comparten endpoint y solo cambian un
+par de campos, así que separarlos sería repetir la misma validación cuatro
+veces. El `tipo` va contra lista blanca.
+
+**Fuera a propósito**: consultar el estado de una transacción,
+`get_acceptance_token`, `tokenize_card` y los endpoints `/tokens/*` (incluidos
+los de Nequi y DaviPlata). Todos usan la clave **pública**, que está pensada
+para viajar en el cliente. Moverlos no aportaría nada y complicaría el cambio.
+
+PSE no está implementado en ninguna app, así que no se cubre.
 
 ## Lo que la función NO acepta del cliente
 
@@ -29,6 +39,11 @@ Estas cuatro cosas se resuelven en el servidor aunque el cliente las mande:
   solo existe aquí.
 - **De quién es el método de pago.** Se comprueba que el `payment_source_id`
   pertenece al cliente de esa solicitud, no a quien llama.
+
+El `payment_source_id` se busca en **las dos** tablas que lo guardan:
+`metodos_pago` (Nequi, DaviPlata, Bancolombia) y `tarjetas_guardadas` (las
+tarjetas, 34 filas en producción frente a 3). Mirar solo una rechazaría pagos
+válidos con un 403.
 
 Quien llama solo elige *qué* solicitud cobrar, y tiene que ser el admin, el
 cliente dueño de la solicitud o el proveedor asignado.
