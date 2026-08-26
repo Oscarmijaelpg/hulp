@@ -57,17 +57,41 @@ Deno.test('la firma completa coincide con el calculo independiente', async () =>
   );
 });
 
-Deno.test('el monto es `precio`, que ya lleva los adicionales dentro', () => {
-  // Caso real de produccion: precio 119900 con 49900 de adicionales se cobro
-  // por 119900. Sumarlos daria 169800 y cobraria los adicionales dos veces.
-  assertEquals(centavosDeLaSolicitud({ precio: 119900 }), 11990000);
+Deno.test('el monto es el precio vigente mas los adicionales', () => {
+  // precio_base es el que el admin edita; precio se queda con el de catalogo
+  // del dia que se creo la solicitud y nadie lo actualiza.
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: 119900, precio: 99900, precio_adicionales: 49900 }),
+    16980000,
+  );
 });
 
-Deno.test('sin precio no hay cobro, y cero lo rechaza la funcion', () => {
-  assertEquals(centavosDeLaSolicitud({ precio: null }), 0);
+Deno.test('manda precio_base aunque `precio` diga otra cosa', () => {
+  // Caso real: el admin bajo el precio despues de crearla. Cobrar `precio`
+  // seria cobrar el de catalogo viejo.
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: 99900, precio: 110900, precio_adicionales: 0 }),
+    9990000,
+  );
+});
+
+Deno.test('sin precio_base se cae a precio, que son 5 solicitudes', () => {
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: null, precio: 30000, precio_adicionales: 5000 }),
+    3500000,
+  );
+});
+
+Deno.test('todo nulo da cero, y cero lo rechaza la funcion', () => {
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: null, precio: null, precio_adicionales: null }),
+    0,
+  );
 });
 
 Deno.test('el recibo se cobra por su total, sin recalcular', () => {
+  // Un recibo es el desglose de materiales y mano de obra que emite el
+  // proveedor; su total ya esta cerrado y aceptado.
   assertEquals(centavosDeRecibo(260000), 26000000);
   assertEquals(centavosDeRecibo(null), 0);
 });
@@ -75,6 +99,13 @@ Deno.test('el recibo se cobra por su total, sin recalcular', () => {
 Deno.test('el redondeo no pierde un centavo por el error de coma flotante', () => {
   // 41000.1 * 100 en coma flotante da 4100009.999999999; truncar cobraria
   // 4100009. Se espera el redondeo.
-  assertEquals(centavosDeLaSolicitud({ precio: 41000.1 }), 4100010);
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: 41000.1, precio: null, precio_adicionales: 0 }),
+    4100010,
+  );
+  assertEquals(
+    centavosDeLaSolicitud({ precio_base: 0.1, precio: null, precio_adicionales: 0.2 }),
+    30,
+  );
   assertEquals(centavosDeRecibo(0.1 + 0.2), 30);
 });

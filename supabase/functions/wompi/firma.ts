@@ -28,28 +28,38 @@ export function cadenaDeFirma(
 /** Lo que la solicitud vale, en centavos. */
 export interface PreciosDeSolicitud {
   precio: number | null;
+  precio_base: number | null;
+  precio_adicionales: number | null;
 }
 
 /**
  * El monto SIEMPRE se recalcula en el servidor, nunca se toma del cliente.
  *
- * `precio` es el TOTAL a cobrar y ya lleva los adicionales dentro. Se
- * comprobo contra los cobros reales de produccion: de los diez ultimos con
- * `precio_adicionales` distinto de cero, nueve se cobraron por exactamente
- * `precio` y ninguno por `precio + precio_adicionales`.
+ * Es el precio del servicio mas los adicionales. Cual de las dos columnas de
+ * precio es "el precio del servicio" se decide asi:
  *
- * Por eso NO se suma `precio_adicionales`, que es el desglose informativo:
- * sumarlo cobraria los adicionales dos veces. En un caso real —precio 119900
- * con 49900 de adicionales— serian 169800 en lugar de 119900.
+ *   `precio`       se escribe UNA vez, al crear la solicitud, con el precio
+ *                  de catalogo de ese dia. Nadie lo actualiza despues: no
+ *                  aparece en ningun update de solicitudes_servicio.
+ *   `precio_base`  es el que el admin edita en edicion_solicitud_widget, y
+ *                  por tanto el vigente.
  *
- * Tampoco se usa `precio_base`, que es el precio de catalogo antes de
- * ajustar: en esos mismos diez casos difiere de `precio` en nueve.
+ * Difieren en 38 de las 91 solicitudes de produccion, asi que la diferencia
+ * es dinero real. Se usa `precio_base`, y `precio` solo cuando aquel viene
+ * nulo, que son 5 casos.
+ *
+ * Esto tambien unifica una incoherencia del codigo actual: aceptar_servicio
+ * de talento sumaba sobre `precio` —el congelado— mientras finalizar_servicio
+ * y el admin sumaban sobre `precio_base`. Cobraban distinto por la misma
+ * solicitud si el admin habia tocado el precio.
  *
  * El redondeo va al final para no arrastrar el error de los flotantes:
  * 41000.1 * 100 da 4100009.999... y truncar cobraria un centavo de menos.
  */
 export function centavosDeLaSolicitud(s: PreciosDeSolicitud): number {
-  return Math.round((s.precio ?? 0) * 100);
+  const servicio = s.precio_base ?? s.precio ?? 0;
+  const adicionales = s.precio_adicionales ?? 0;
+  return Math.round((servicio + adicionales) * 100);
 }
 
 /**

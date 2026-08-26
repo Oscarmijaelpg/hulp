@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
       const { data: solicitud, error: errSol } = await admin
         .from('solicitudes_servicio')
-        .select('id, usuario_id, profesional_id, precio, estado_pago')
+        .select('id, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago')
         .eq('id', solicitud_id)
         .maybeSingle();
       if (errSol) {

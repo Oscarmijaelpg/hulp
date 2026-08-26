@@ -32,16 +32,15 @@ PSE no está implementado en ninguna app, así que no se cubre.
 
 Estas cuatro cosas se resuelven en el servidor aunque el cliente las mande:
 
-- **El monto.** Sale de `recibos.total` cuando el cobro nace de un recibo
-  —así paga el cliente desde Usuarios— y de `solicitudes_servicio.precio`
+- **El monto.** De `recibos.total` cuando el cobro nace de un recibo —así
+  paga el cliente desde Usuarios— y de `precio_base + precio_adicionales`
   cuando nace de una solicitud.
 
-  **`precio` ya lleva los adicionales dentro.** Comprobado contra los cobros
-  reales: de los diez últimos con `precio_adicionales` distinto de cero, nueve
-  se cobraron por exactamente `precio` y ninguno por `precio + adicionales`.
-  Sumarlos los cobraría dos veces —en un caso real, 169.800 en vez de 119.900.
-  `precio_adicionales` es el desglose informativo y `precio_base` el precio de
-  catálogo antes de ajustar.
+  **`precio_base` es el precio vigente, no `precio`.** `precio` se escribe una
+  sola vez, al crear la solicitud, con el precio de catálogo de ese día, y
+  ningún update lo toca después; `precio_base` es el que el admin edita.
+  Difieren en 38 de las 91 solicitudes. Si `precio_base` viene nulo —5 casos—
+  se cae a `precio`.
 
 - **El correo del cliente.** Sale de `usuarios.correo_electronico`.
 - **La referencia y la firma.** La firma necesita la clave de integridad, que
