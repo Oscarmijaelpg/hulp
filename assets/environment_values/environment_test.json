@@ -1,8 +1,6 @@
 {
-  "privateKey": "prv_test_npYCGSdqpNm0gE2p58BecQIS91HblQm4",
   "publicKey": "pub_test_xV7hWk53YbNijoOYOnvXkLCs3CkGPNEB",
   "isProduction": false,
   "supabaseUrl": "https://ptafsiwlhxomgqmdmidf.supabase.co",
-  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0YWZzaXdsaHhvbWdxbWRtaWRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTMwNzcsImV4cCI6MjA5MTkyOTA3N30._nYfEOm4RtlP4Y8xnWFdw3m67NcehX-gwVg5-rIfr3o",
-  "integrityKey": "test_integrity_lKLnfCmo8CY9VV03YcC9rfJhSC78N5mP"
+  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0YWZzaXdsaHhvbWdxbWRtaWRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTMwNzcsImV4cCI6MjA5MTkyOTA3N30._nYfEOm4RtlP4Y8xnWFdw3m67NcehX-gwVg5-rIfr3o"
 }

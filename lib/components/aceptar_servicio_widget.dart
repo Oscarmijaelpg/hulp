@@ -408,6 +408,20 @@ class _AceptarServicioWidgetState extends State<AceptarServicioWidget> {
                                   ),
                                 );
                                 await TransaccionesTable().insert({
+                                  'numero_transaccion': getJsonField(
+                                    _model.pago,
+                                    r'''$.transactionId''',
+                                  )?.toString(),
+                                  'referencia_externa': getJsonField(
+                                    _model.pago,
+                                    r'''$.reference''',
+                                  )?.toString(),
+                                  // Lo que Wompi confirmo, no lo que calculo la app.
+                                  // Sin esto no hay forma de auditar un cobro.
+                                  'datos_pago': getJsonField(
+                                    _model.pago,
+                                    r'''$.fullData''',
+                                  ),
                                   'solicitud_id':
                                       _model.validacion?.firstOrNull?.id,
                                   'usuario_id':
