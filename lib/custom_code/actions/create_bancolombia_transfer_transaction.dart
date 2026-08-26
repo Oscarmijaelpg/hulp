@@ -9,69 +9,63 @@ import 'package:flutter/material.dart';
 // Begin custom action code
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import '/backend/wompi_servidor.dart';
 
+/// Cobra un recibo por transferencia Bancolombia.
+///
+/// A diferencia de createTransaction, aqui no hay fuente de pago guardada: la
+/// transaccion lleva el metodo dentro y Wompi devuelve una URL a la que hay
+/// que mandar al cliente para que autorice el pago en su banco.
+///
+/// El cobro lo hace la Edge Function `wompi`. `privateKey` sigue en la firma
+/// porque el widget la pasa, pero **se ignora**; el importe tambien, porque lo
+/// calcula el servidor desde el recibo.
 Future<dynamic> createBancolombiaTransferTransaction(
-  String privateKey,
+  String privateKey, // ignorado: la clave vive en el servidor
   String acceptanceToken,
-  int amountInCents,
+  int amountInCents, // ignorado: el importe lo calcula el servidor
   String currency,
-  String customerEmail,
+  String customerEmail, // ignorado: sale de la ficha del cliente
   String referenceId,
   bool isProduction,
 ) async {
   try {
-    final baseUrl = isProduction
-        ? 'https://production.wompi.co/v1'
-        : 'https://sandbox.wompi.co/v1';
-
-    final requestBody = {
-      'acceptance_token': acceptanceToken.trim(),
-      'amount_in_cents': amountInCents,
-      'currency': currency.toUpperCase(),
-      'customer_email': customerEmail.trim(),
-      'reference': referenceId.trim(),
-      'payment_method': {
-        'type': 'BANCOLOMBIA_TRANSFER',
-        'payment_description': 'Pago con Bancolombia',
-        'user_type': 'PERSON',
-      }
-    };
-
-    final response = await http.post(
-      Uri.parse('$baseUrl/transactions'),
-      headers: {
-        'Authorization': 'Bearer $privateKey',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      final errorData = jsonDecode(response.body);
+    if (acceptanceToken.trim().isEmpty) {
       return {
         'success': false,
-        'error': errorData['error']?.toString() ?? 'Error al crear transacción',
-        'statusCode': response.statusCode,
-        'details': errorData,
+        'error': 'Acceptance token requerido',
+        'field': 'acceptanceToken'
+      };
+    }
+    if (referenceId.trim().isEmpty) {
+      return {
+        'success': false,
+        'error': 'Referencia requerida',
+        'field': 'referenceId'
       };
     }
 
-    final data = jsonDecode(response.body)['data'];
-    final asyncPaymentUrl =
-        data['payment_method']['extra']['async_payment_url'];
+    final respuesta = await llamarWompi({
+      'accion': 'crear_cobro_bancolombia',
+      'recibo_id': referenceId.trim(),
+      'acceptance_token': acceptanceToken.trim(),
+    });
+
+    if (respuesta['success'] != true) return respuesta;
+
+    // La URL de autorizacion viene anidada en el metodo de pago. Si Wompi
+    // cambiara la forma de la respuesta, mejor devolver null que reventar.
+    String? urlAutorizacion;
+    try {
+      urlAutorizacion =
+          respuesta['paymentMethod']?['extra']?['async_payment_url'];
+    } catch (_) {
+      urlAutorizacion = null;
+    }
 
     return {
-      'success': true,
-      'transactionId': data['id'],
-      'status': data['status'],
-      'asyncPaymentUrl': asyncPaymentUrl,
-      'amount': data['amount_in_cents'],
-      'currency': data['currency'],
-      'customerEmail': data['customer_email'],
-      'reference': data['reference'],
+      ...respuesta,
+      'asyncPaymentUrl': urlAutorizacion,
     };
   } catch (e) {
     return {

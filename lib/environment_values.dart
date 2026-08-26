@@ -51,12 +51,16 @@ class FFDevEnvironmentValues {
       final String response =
           await rootBundle.loadString(environmentValuesPath);
       final data = await json.decode(response);
-      _privateKey = data['privateKey'];
+      // privateKey e integrityKey ya no estan en el fichero: viven en la Edge
+      // Function `wompi`, que es la unica que llama a Wompi con ellas. Se leen
+      // con `?? ''` y no directamente porque este fichero viaja en el bundle
+      // web y cualquiera podia descargarlo.
+      _privateKey = data['privateKey'] ?? '';
       _publicKey = data['publicKey'];
       _isProduction = data['isProduction'];
       _supabaseUrl = data['supabaseUrl'];
       _supabaseAnonKey = data['supabaseAnonKey'];
-      _integrityKey = data['integrityKey'];
+      _integrityKey = data['integrityKey'] ?? '';
       _n8nWebhookUrl = data['n8nWebhookUrl'];
       _googleMapsApiKey = data['googleMapsApiKey'] ?? '';
       _googleMapsMapId = data['googleMapsMapId'] ?? '';
@@ -66,6 +70,11 @@ class FFDevEnvironmentValues {
   }
 
   String _privateKey = '';
+
+  /// Siempre vacia. La clave privada de Wompi vive en la Edge Function
+  /// `wompi`; aqui solo queda el getter porque los widgets generados por
+  /// FlutterFlow lo pasan como parametro, y esos parametros se ignoran.
+  @Deprecated('La clave privada vive en la Edge Function wompi')
   String get privateKey => _privateKey;
 
   String _publicKey = '';
@@ -81,6 +90,10 @@ class FFDevEnvironmentValues {
   String get supabaseAnonKey => _supabaseAnonKey;
 
   String _integrityKey = '';
+
+  /// Siempre vacia, igual que [privateKey]: la firma de integridad se calcula
+  /// en la Edge Function, que es donde esta la clave.
+  @Deprecated('La firma se calcula en la Edge Function wompi')
   String get integrityKey => _integrityKey;
 
   String _n8nWebhookUrl = '';

@@ -198,6 +198,20 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                             'monto': widget.recibo?.total,
                             'moneda': 'COP',
                             'proveedor_pago': 'WOMPI',
+                            'numero_transaccion': getJsonField(
+                              _model.pago,
+                              r'''$.transactionId''',
+                            )?.toString(),
+                            'referencia_externa': getJsonField(
+                              _model.pago,
+                              r'''$.reference''',
+                            )?.toString(),
+                            // Lo que Wompi confirmo, no lo que calculo la app.
+                            // Sin esto no hay forma de auditar un cobro.
+                            'datos_pago': getJsonField(
+                              _model.pago,
+                              r'''$.fullData''',
+                            ),
                             'fecha_pago':
                                 supaSerialize<DateTime>(getCurrentTimestamp),
                             'fecha_registro':
@@ -366,7 +380,13 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                       _model.pago1 =
                           await actions.createBancolombiaTransferTransaction(
                         FFDevEnvironmentValues().privateKey,
-                        ((widget.recibo!.total * 100).round()).toString(),
+                        // Aqui va el token de aceptacion, que es el que se
+                        // acaba de pedir arriba. Estaba pasandose el importe
+                        // convertido a texto, asi que Wompi rechazaba el pago.
+                        getJsonField(
+                          _model.aceptaceToken,
+                          r'''$.acceptanceToken''',
+                        ).toString(),
                         (widget.recibo!.total * 100).round(),
                         'COP',
                         currentUserEmail,
@@ -378,9 +398,13 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                         _model.pago1,
                         r'''$.success''',
                       )) {
+                        // Este es el flujo de Bancolombia, cuya respuesta esta
+                        // en pago1. Se miraba el estado de `pago`, que es la
+                        // del pago con tarjeta: si el cliente no habia pasado
+                        // antes por ahi venia nulo y no se registraba nada.
                         if ('APPROVED' ==
                             getJsonField(
-                              _model.pago,
+                              _model.pago1,
                               r'''$.status''',
                             ).toString()) {
                           await TransaccionesTable().insert({
@@ -388,6 +412,20 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                             'monto': widget.recibo?.total,
                             'moneda': 'COP',
                             'proveedor_pago': 'WOMPI',
+                            'numero_transaccion': getJsonField(
+                              _model.pago1,
+                              r'''$.transactionId''',
+                            )?.toString(),
+                            'referencia_externa': getJsonField(
+                              _model.pago1,
+                              r'''$.reference''',
+                            )?.toString(),
+                            // Lo que Wompi confirmo, no lo que calculo la app.
+                            // Sin esto no hay forma de auditar un cobro.
+                            'datos_pago': getJsonField(
+                              _model.pago1,
+                              r'''$.fullData''',
+                            ),
                             'fecha_pago':
                                 supaSerialize<DateTime>(getCurrentTimestamp),
                             'fecha_registro':

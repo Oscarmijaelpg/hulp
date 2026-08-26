@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 // Begin custom widget code
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
+import '/backend/wompi_servidor.dart';
+
 import '/flutter_flow/flutter_flow_widgets.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -315,49 +317,43 @@ class _BancolombiaVerificationWidgetState
 
       _addDebugLog('💳 Creando payment source...');
 
-      final privateKeyPreview = widget.privateKey.length > 30
-          ? widget.privateKey.substring(0, 30)
-          : widget.privateKey;
-      _addDebugLog('🔑 Private Key: $privateKeyPreview...');
+      _addDebugLog('🔑 El registro lo hace la Edge Function wompi');
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/payment_sources'),
-        headers: {
-          'Authorization': 'Bearer ${widget.privateKey}',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'type': 'BANCOLOMBIA_TRANSFER',
-          'token': _bancolombiaTokenId,
-          'payment_description':
-              widget.paymentDescription ?? 'Pago con Bancolombia',
-          'customer_email': widget.customerEmail,
-          'acceptance_token': widget.acceptanceToken,
-          'accept_personal_auth': widget.acceptPersonalAuth,
-        }),
-      );
+      // La clave privada ya no sale de la app: la tiene la Edge Function. La
+      // tokenizacion previa se queda arriba, que va con la publica.
+      final respuesta = await llamarWompi({
+        'accion': 'registrar_metodo_pago',
+        'tipo': 'BANCOLOMBIA_TRANSFER',
+        'token': _bancolombiaTokenId,
+        'payment_description':
+            widget.paymentDescription ?? 'Pago con Bancolombia',
+        'acceptance_token': widget.acceptanceToken,
+        'accept_personal_auth': widget.acceptPersonalAuth,
+        if (widget.customerEmail.trim().isNotEmpty)
+          'customer_email': widget.customerEmail.trim(),
+      });
 
-      _addDebugLog('📡 Payment Source Status: ${response.statusCode}');
-      _addDebugLog('📡 Payment Source Body: ${response.body}');
+      _addDebugLog('📡 Payment Source: ${respuesta['success']}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final paymentSource = data['data'] as Map<String, dynamic>;
+      if (respuesta['success'] == true) {
+        final paymentSource =
+            (respuesta['fullData'] as Map?)?.cast<String, dynamic>() ?? {};
 
-        if (paymentSource['status'] == 'AVAILABLE') {
-          _paymentSourceId = paymentSource['id'] as int;
+        if (respuesta['status'] == 'AVAILABLE') {
+          _paymentSourceId = respuesta['paymentSourceId'] as int;
           final publicData =
-              paymentSource['public_data'] as Map<String, dynamic>;
+              (paymentSource['public_data'] as Map?)?.cast<String, dynamic>() ??
+                  {};
           _bankAccountType = publicData['bank_account_type'] as String? ?? '';
           _lastFour = publicData['bank_account_last_four'] as String? ?? '';
           _addDebugLog('✅ Payment Source creado! ID: $_paymentSourceId');
           _handleSuccess();
         } else {
-          throw Exception('Payment Source status: ${paymentSource['status']}');
+          throw Exception('Payment Source status: ${respuesta['status']}');
         }
       } else {
-        final errorData = json.decode(response.body) as Map<String, dynamic>;
-        throw Exception('Error creando payment source: ${errorData['error']}');
+        throw Exception(
+            'Error creando payment source: ${respuesta['error']}');
       }
     } catch (e) {
       _addDebugLog('❌ Error: $e');

@@ -292,42 +292,6 @@ class BancolombiaPaymentsourcesCall {
   }
 }
 
-class BancolombiaPaymentsourcesPRODCall {
-  static Future<ApiCallResponse> call({
-    String? token = '',
-    String? customerEmail = '',
-    String? acceptanceToken = '',
-    String? acceptPersonalAuth = '',
-  }) async {
-    final ffApiRequestBody = '''
-{
-  "type": "BANCOLOMBIA_TRANSFER",
-  "token": "${escapeStringForJson(token)}",
-  "payment_description": "Prueba",
-  "customer_email": "${escapeStringForJson(customerEmail)}",
-  "acceptance_token": "${escapeStringForJson(acceptanceToken)}",
-  "accept_personal_auth": "${escapeStringForJson(acceptPersonalAuth)}"
-}''';
-    return ApiManager.instance.makeApiCall(
-      callName: 'Bancolombia paymentsources PROD',
-      apiUrl: 'https://production.wompi.co/v1',
-      callType: ApiCallType.POST,
-      headers: {
-        'Authorization': 'Bearer ${FFDevEnvironmentValues().privateKey}',
-      },
-      params: {},
-      body: ffApiRequestBody,
-      bodyType: BodyType.JSON,
-      returnBody: true,
-      encodeBodyUtf8: false,
-      decodeUtf8: false,
-      cache: false,
-      isStreamingApi: false,
-      alwaysAllowBody: false,
-    );
-  }
-}
-
 class ApiPagingParams {
   int nextPageNumber = 0;
   int numItems = 0;

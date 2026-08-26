@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 // Begin custom widget code
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
+import '/backend/wompi_servidor.dart';
+
 import '/custom_code/widgets/index.dart';
 import '/custom_code/actions/index.dart';
 import '/flutter_flow/custom_functions.dart';
@@ -257,26 +259,25 @@ class _DaviplataVerificationWidgetState
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/payment_sources'),
-        headers: {
-          'Authorization': 'Bearer ${widget.privateKey}',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'type': 'DAVIPLATA',
-          'token': _daviplataTOKEN,
-          'customer_email': _emailController.text.trim(),
-          'acceptance_token': widget.acceptanceToken,
-          'accept_personal_auth': widget.acceptPersonalAuth,
-        }),
-      );
+      // El registro lo hace la Edge Function `wompi`, que es la unica con la
+      // clave privada. Los pasos previos —tokenizar y validar el OTP— se
+      // quedan arriba: van con la clave publica y con el token que devuelve
+      // el propio DaviPlata.
+      //
+      // El correo se manda tal cual lo escribe el usuario: su DaviPlata puede
+      // estar a un correo distinto del de Hulp.
+      final respuesta = await llamarWompi({
+        'accion': 'registrar_metodo_pago',
+        'tipo': 'DAVIPLATA',
+        'token': _daviplataTOKEN,
+        'acceptance_token': widget.acceptanceToken,
+        'accept_personal_auth': widget.acceptPersonalAuth,
+        'customer_email': _emailController.text.trim(),
+      });
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
-
+      if (respuesta['success'] == true) {
         setState(() {
-          _paymentSourceId = data['data']['id'];
+          _paymentSourceId = respuesta['paymentSourceId'];
           _currentStep = 'success';
           _isLoading = false;
           _statusMessage = '';
@@ -291,7 +292,11 @@ class _DaviplataVerificationWidgetState
 
         _showSuccessSnackbar('¡Daviplata vinculado exitosamente!');
       } else {
-        _handleError(response, 'Error al crear fuente de pago');
+        _showError(respuesta['error']?.toString() ??
+            'Error al crear fuente de pago');
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
       _showError('Error al crear fuente de pago: ${e.toString()}');

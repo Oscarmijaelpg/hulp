@@ -10,47 +10,43 @@ import 'package:flutter/material.dart';
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
 import 'package:http/http.dart' as http;
-import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
+import '/backend/wompi_servidor.dart';
+
+/// Cobra un recibo y espera a que Wompi resuelva la transaccion.
+///
+/// El cobro lo hace la Edge Function `wompi`, que es la unica que tiene la
+/// clave privada y la de integridad. Aqui ya no se manda ninguna de las dos:
+/// `privateKey` e `integrityKey` siguen en la firma porque los widgets
+/// generados por FlutterFlow los pasan, pero **se ignoran**.
+///
+/// El importe tampoco se manda: lo calcula el servidor desde el recibo. Antes
+/// llegaba desde la pantalla, asi que bastaba con manipular la peticion para
+/// pagar menos de la cuenta.
+///
+/// El sondeo posterior se queda aqui porque consulta con la clave PUBLICA,
+/// que esta pensada para viajar en el cliente.
 Future<dynamic> createTransaction(
-  String privateKey,
-  String publicKey, // ← NUEVO: Para consultar estado
+  String privateKey, // ignorado: la clave vive en el servidor
+  String publicKey,
   int paymentSourceId,
   String acceptanceToken,
-  int amountInCents,
+  int amountInCents, // ignorado: el importe lo calcula el servidor
   String currency,
-  String customerEmail,
+  String customerEmail, // ignorado: sale de la ficha del cliente
   String referenceId,
-  String integrityKey,
+  String integrityKey, // ignorado: la firma se hace en el servidor
   bool isProduction,
 ) async {
   try {
-    // Validaciones básicas
-    if (privateKey.trim().isEmpty || !privateKey.startsWith('prv_')) {
-      return {
-        'success': false,
-        'error': 'Private key inválida. Debe empezar con "prv_"',
-        'field': 'privateKey'
-      };
-    }
-
     if (publicKey.trim().isEmpty || !publicKey.startsWith('pub_')) {
       return {
         'success': false,
-        'error': 'Public key inválida. Debe empezar con "pub_"',
+        'error': 'Public key invalida. Debe empezar con "pub_"',
         'field': 'publicKey'
       };
     }
-
-    if (paymentSourceId <= 0) {
-      return {
-        'success': false,
-        'error': 'Payment Source ID debe ser mayor a 0',
-        'field': 'paymentSourceId'
-      };
-    }
-
     if (acceptanceToken.trim().isEmpty) {
       return {
         'success': false,
@@ -58,159 +54,49 @@ Future<dynamic> createTransaction(
         'field': 'acceptanceToken'
       };
     }
-
-    if (amountInCents <= 0) {
-      return {
-        'success': false,
-        'error': 'El monto debe ser mayor a 0',
-        'field': 'amountInCents'
-      };
-    }
-
-    if (currency.trim().isEmpty) {
-      return {
-        'success': false,
-        'error': 'Moneda requerida (ej: COP, USD)',
-        'field': 'currency'
-      };
-    }
-
-    if (customerEmail.trim().isEmpty || !customerEmail.contains('@')) {
-      return {
-        'success': false,
-        'error': 'Email válido requerido',
-        'field': 'customerEmail'
-      };
-    }
-
     if (referenceId.trim().isEmpty) {
       return {
         'success': false,
-        'error': 'Referencia requerida y debe ser única',
+        'error': 'Referencia requerida',
         'field': 'referenceId'
       };
     }
 
-    if (integrityKey.trim().isEmpty) {
+    // En esta app lo que se cobra es siempre un recibo: la referencia que
+    // llega es su id (recibo_widget.dart y recibo2_widget.dart).
+    final creacion = await llamarWompi({
+      'accion': 'crear_cobro',
+      'recibo_id': referenceId.trim(),
+      'acceptance_token': acceptanceToken.trim(),
+      if (paymentSourceId > 0) 'payment_source_id': paymentSourceId,
+    });
+
+    if (creacion['success'] != true) return creacion;
+
+    final transactionId = creacion['transactionId'];
+    final estadoInicial = creacion['status'];
+
+    const estadosFinales = ['APPROVED', 'DECLINED', 'VOIDED', 'ERROR'];
+    if (estadosFinales.contains(estadoInicial)) {
       return {
-        'success': false,
-        'error': 'Llave de integridad requerida para signature',
-        'field': 'integrityKey'
+        ...creacion,
+        'attempts': 0,
+        'totalTime': '0 segundos',
+        'message': 'Transaccion finalizada inmediatamente: $estadoInicial',
       };
     }
 
+    // Sondeo hasta que Wompi resuelva. Va con la clave publica.
     final baseUrl = isProduction
         ? 'https://production.wompi.co/v1'
         : 'https://sandbox.wompi.co/v1';
+    final inicio = DateTime.now();
 
-    print('=== INICIANDO TRANSACCIÓN CON POLLING AUTOMÁTICO ===');
-    print('Payment Source ID: $paymentSourceId');
-    print('Amount: $amountInCents centavos');
-    print('Reference: ${referenceId.trim()}');
-    print('================================================');
-
-    // PASO 1: CREAR LA TRANSACCIÓN
-    final signatureString =
-        '${referenceId.trim()}${amountInCents}${currency.toUpperCase()}${integrityKey.trim()}';
-    final bytes = utf8.encode(signatureString);
-    final digest = sha256.convert(bytes);
-    final signature = digest.toString();
-
-    final requestBody = {
-      'amount_in_cents': amountInCents,
-      'currency': currency.toUpperCase(),
-      'customer_email': customerEmail.trim().toLowerCase(),
-      'payment_method': {
-        'installments': 1,
-      },
-      'reference': referenceId.trim(),
-      'payment_source_id': paymentSourceId,
-      'acceptance_token': acceptanceToken.trim(),
-      'signature': signature,
-    };
-
-    print('=== CREANDO TRANSACCIÓN ===');
-    print('Signature: $signature');
-    print('===========================');
-
-    final createResponse = await http.post(
-      Uri.parse('$baseUrl/transactions'),
-      headers: {
-        'Authorization': 'Bearer $privateKey',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode(requestBody),
-    );
-
-    print('=== RESPUESTA CREACIÓN ===');
-    print('Status: ${createResponse.statusCode}');
-    print('Body: ${createResponse.body}');
-    print('==========================');
-
-    if (createResponse.statusCode != 200 && createResponse.statusCode != 201) {
-      final errorData = jsonDecode(createResponse.body);
-      return {
-        'success': false,
-        'error': errorData['error']?.toString() ?? 'Error al crear transacción',
-        'statusCode': createResponse.statusCode,
-        'details': errorData,
-        'phase': 'CREATION'
-      };
-    }
-
-    final createData = jsonDecode(createResponse.body);
-    final transactionId = createData['data']['id'];
-    final initialStatus = createData['data']['status'];
-
-    print('=== TRANSACCIÓN CREADA ===');
-    print('ID: $transactionId');
-    print('Estado inicial: $initialStatus');
-    print('==========================');
-
-    // Si ya es final, retornarlo inmediatamente
-    if (['APPROVED', 'DECLINED', 'VOIDED', 'ERROR'].contains(initialStatus)) {
-      print('=== ESTADO FINAL INMEDIATO ===');
-      print('Estado: $initialStatus');
-      print('No necesita polling');
-      print('==============================');
-
-      return {
-        'success': true,
-        'transactionId': transactionId,
-        'status': initialStatus,
-        'statusMessage': createData['data']['status_message'] ?? '',
-        'amount': createData['data']['amount_in_cents'],
-        'currency': createData['data']['currency'],
-        'customerEmail': createData['data']['customer_email'],
-        'reference': createData['data']['reference'],
-        'createdAt': createData['data']['created_at'],
-        'finalizedAt': createData['data']['finalized_at'],
-        'paymentMethod': createData['data']['payment_method'],
-        'paymentSourceId': createData['data']['payment_source_id'],
-        'attempts': 0,
-        'totalTime': '0 segundos',
-        'message': 'Transacción finalizada inmediatamente: $initialStatus',
-        'fullData': createData['data']
-      };
-    }
-
-    // PASO 2: POLLING AUTOMÁTICO HASTA OBTENER RESULTADO FINAL
-    print('=== INICIANDO POLLING AUTOMÁTICO ===');
-    print('Estado inicial: $initialStatus (PENDING)');
-    print('Max intentos: 20 (60 segundos total)');
-    print('Intervalo: 3 segundos');
-    print('====================================');
-
-    final startTime = DateTime.now();
-
-    for (int attempt = 1; attempt <= 20; attempt++) {
-      print('🔍 Polling intento $attempt/20...');
-
+    for (int intento = 1; intento <= 20; intento++) {
       await Future.delayed(Duration(seconds: 3));
 
       try {
-        final statusResponse = await http.get(
+        final estadoResp = await http.get(
           Uri.parse('$baseUrl/transactions/$transactionId'),
           headers: {
             'Authorization': 'Bearer $publicKey',
@@ -218,81 +104,55 @@ Future<dynamic> createTransaction(
           },
         );
 
-        if (statusResponse.statusCode == 200) {
-          final statusData = jsonDecode(statusResponse.body);
-          final currentStatus = statusData['data']['status'];
-          final elapsedTime = DateTime.now().difference(startTime).inSeconds;
+        if (estadoResp.statusCode == 200) {
+          final datos = jsonDecode(estadoResp.body);
+          final estado = datos['data']['status'];
+          final segundos = DateTime.now().difference(inicio).inSeconds;
 
-          print(
-              '📊 Estado actual: $currentStatus (${elapsedTime}s transcurridos)');
-
-          // ¡RESULTADO FINAL ENCONTRADO!
-          if (['APPROVED', 'DECLINED', 'VOIDED', 'ERROR']
-              .contains(currentStatus)) {
-            print('🎉 === RESULTADO FINAL OBTENIDO ===');
-            print('✅ Estado: $currentStatus');
-            print('⏱️  Intentos: $attempt');
-            print('🕐 Tiempo total: ${elapsedTime} segundos');
-            print('==================================');
-
+          if (estadosFinales.contains(estado)) {
             return {
               'success': true,
               'transactionId': transactionId,
-              'status': currentStatus,
-              'statusMessage': statusData['data']['status_message'] ?? '',
-              'amount': statusData['data']['amount_in_cents'],
-              'currency': statusData['data']['currency'],
-              'customerEmail': statusData['data']['customer_email'],
-              'reference': statusData['data']['reference'],
-              'createdAt': statusData['data']['created_at'],
-              'finalizedAt': statusData['data']['finalized_at'],
-              'paymentMethod': statusData['data']['payment_method'],
-              'paymentSourceId': statusData['data']['payment_source_id'],
-              'attempts': attempt,
-              'totalTime': '${elapsedTime} segundos',
-              'message': 'Transacción finalizada: $currentStatus',
-              'fullData': statusData['data']
+              'status': estado,
+              'statusMessage': datos['data']['status_message'] ?? '',
+              'amount': datos['data']['amount_in_cents'],
+              'currency': datos['data']['currency'],
+              'customerEmail': datos['data']['customer_email'],
+              'reference': datos['data']['reference'],
+              'createdAt': datos['data']['created_at'],
+              'finalizedAt': datos['data']['finalized_at'],
+              'paymentMethod': datos['data']['payment_method'],
+              'paymentSourceId': datos['data']['payment_source_id'],
+              'attempts': intento,
+              'totalTime': '$segundos segundos',
+              'message': 'Transaccion finalizada: $estado',
+              'fullData': datos['data']
             };
           }
-
-          print('⏳ Aún en $currentStatus, continuando polling...');
-        } else {
-          print(
-              '❌ Error HTTP ${statusResponse.statusCode} en intento $attempt');
         }
       } catch (e) {
-        print('❌ Error en polling intento $attempt: ${e.toString()}');
+        // Un fallo de red suelto no aborta el sondeo: se reintenta.
+        print('Error consultando el estado, intento $intento: $e');
       }
     }
 
-    // Si llegamos aquí, se agotó el tiempo
-    final totalTime = DateTime.now().difference(startTime).inSeconds;
-    print('⏰ === TIMEOUT DESPUÉS DE 20 INTENTOS ===');
-    print('❌ Tiempo total: ${totalTime} segundos');
-    print('⚠️  Estado: Probablemente aún PENDING');
-    print('=======================================');
-
+    final total = DateTime.now().difference(inicio).inSeconds;
     return {
       'success': false,
       'error':
-          'TIMEOUT: La transacción sigue procesándose después de 60 segundos',
+          'TIMEOUT: La transaccion sigue procesandose despues de 60 segundos',
       'transactionId': transactionId,
       'status': 'TIMEOUT',
       'attempts': 20,
-      'totalTime': '${totalTime} segundos',
+      'totalTime': '$total segundos',
       'message':
-          'Timeout después de 60 segundos. La transacción puede completarse más tarde.',
+          'Timeout despues de 60 segundos. La transaccion puede completarse mas tarde.',
       'phase': 'POLLING'
     };
   } catch (e) {
-    print('💥 === ERROR GENERAL ===');
-    print('Error: ${e.toString()}');
-    print('=======================');
-
     return {
       'success': false,
-      'error': 'Error general: ${e.toString()}',
-      'statusCode': 0,
+      'error': 'Error inesperado: ${e.toString()}',
       'phase': 'GENERAL'
     };
   }

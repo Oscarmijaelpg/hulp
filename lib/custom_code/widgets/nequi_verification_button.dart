@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 // Begin custom widget code
 // DO NOT REMOVE OR MODIFY THE CODE ABOVE!
 
+import '/backend/wompi_servidor.dart';
+
 import '/custom_code/widgets/index.dart';
 import '/custom_code/actions/index.dart';
 import '/flutter_flow/custom_functions.dart';
@@ -293,49 +295,28 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
     });
   }
 
+  /// Registra la cuenta Nequi como fuente de pago.
+  ///
+  /// Lo hace la Edge Function `wompi`, que es la unica con la clave privada.
+  /// La tokenizacion previa —los pasos `/tokens/nequi`— se queda arriba con la
+  /// clave publica, que es la que corresponde.
   Future<int> _createPaymentSource(String tokenId) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/payment_sources'),
-        headers: {
-          'Authorization': 'Bearer ${widget.privateKey}',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'type': 'NEQUI',
-          'token': tokenId,
-          'customer_email': widget.customerEmail,
-          'acceptance_token': widget.acceptanceToken,
-          'accept_personal_auth': widget.acceptPersonalAuth,
-        }),
-      );
+    final respuesta = await llamarWompi({
+      'accion': 'registrar_metodo_pago',
+      'tipo': 'NEQUI',
+      'token': tokenId,
+      'acceptance_token': widget.acceptanceToken,
+      'accept_personal_auth': widget.acceptPersonalAuth,
+      if (widget.customerEmail.trim().isNotEmpty)
+        'customer_email': widget.customerEmail.trim(),
+    });
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
-        return data['data']['id'];
-      } else {
-        // Parsear el error de la API
-        final errorData = json.decode(response.body);
-        String errorMessage = 'Error al crear fuente de pago';
-
-        if (errorData['error'] != null) {
-          if (errorData['error']['messages'] != null) {
-            errorMessage = errorData['error']['messages'].toString();
-          } else if (errorData['error']['message'] != null) {
-            errorMessage = errorData['error']['message'];
-          } else {
-            errorMessage = errorData['error'].toString();
-          }
-        }
-
-        throw Exception(errorMessage);
-      }
-    } catch (e) {
-      if (e is Exception && e.toString().contains('Exception:')) {
-        rethrow;
-      }
-      throw Exception('Error de conexión: Verifica tu internet');
+    if (respuesta['success'] == true && respuesta['paymentSourceId'] != null) {
+      return respuesta['paymentSourceId'] as int;
     }
+
+    // El resto del widget espera una excepcion con el motivo dentro.
+    throw Exception(respuesta['error'] ?? 'Error al crear fuente de pago');
   }
 
   void _showVerificationModal() {

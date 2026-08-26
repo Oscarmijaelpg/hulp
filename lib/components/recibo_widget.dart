@@ -547,6 +547,21 @@ class _ReciboWidgetState extends State<ReciboWidget> {
                                           'monto': widget.recibo?.total,
                                           'moneda': 'COP',
                                           'proveedor_pago': 'WOMPI',
+                                          'numero_transaccion': getJsonField(
+                                            _model.pago2,
+                                            r'''$.transactionId''',
+                                          )?.toString(),
+                                          'referencia_externa': getJsonField(
+                                            _model.pago2,
+                                            r'''$.reference''',
+                                          )?.toString(),
+                                          // Lo que Wompi confirmo, no lo que
+                                          // calculo la app. Sin esto no hay
+                                          // forma de auditar un cobro.
+                                          'datos_pago': getJsonField(
+                                            _model.pago2,
+                                            r'''$.fullData''',
+                                          ),
                                           'fecha_pago': supaSerialize<DateTime>(
                                               getCurrentTimestamp),
                                           'fecha_registro':
