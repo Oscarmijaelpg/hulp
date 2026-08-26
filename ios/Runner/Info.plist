@@ -40,13 +40,11 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSCameraUsageDescription</key>
-    <string>Se requiere cármara para poder tomar fotos y enviarlas por chat</string>
+    <string>Se requiere la cámara para tomar fotos y enviarlas por el chat</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>In order to record audio for video, this app requires permission to access the microphone.</string>
+    <string>Se requiere el micrófono para grabar el audio de los videos que envías por el chat</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Se requiere cármara para poder elegir imagenes y enviarlas por chat</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Se requiere el uso de ubicación para ver tus servicios cercanos</string>
+    <string>Se requiere la galería para elegir imágenes y enviarlas por el chat</string>
     <!-- Start of notificaciones -->
     <key>NSUserNotificationUsageDescription</key>
     <string>Habilite las notificaciones para recibir información sobre sus servicios solicitados.</string>
