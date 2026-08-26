@@ -55,13 +55,13 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSCameraUsageDescription</key>
-    <string>Habilite la camara para enviar fotos en el chat con proveedores</string>
+    <string>Se requiere la cámara para tomar fotos y enviarlas por el chat con los proveedores</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>In order to record audio for video, this app requires permission to access the microphone.</string>
+    <string>Se requiere el micrófono para grabar el audio de los videos que envías por el chat</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Habilite la galeria de imagenes para enviar imagenes en el chat con proveedores</string>
+    <string>Se requiere la galería para elegir imágenes y enviarlas por el chat con los proveedores</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Se requiere el uso de ubicación para ver tus servicios cercanos</string>
+    <string>Se usa tu ubicación para situar el mapa donde estás al indicar la dirección del servicio que solicitas</string>
     <key>NSUserNotificationUsageDescription</key>
     <string>Habilite las notificaciones para recibir información sobre sus servicios solicitados.</string>
     <key>UILaunchStoryboardName</key>
