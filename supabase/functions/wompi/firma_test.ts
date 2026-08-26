@@ -5,7 +5,12 @@
 // prueba, el test pasaria aunque el algoritmo estuviera mal.
 
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { sha256Hex, cadenaDeFirma, centavosDeLaSolicitud } from './firma.ts';
+import {
+  sha256Hex,
+  cadenaDeFirma,
+  centavosDeLaSolicitud,
+  centavosDeRecibo,
+} from './firma.ts';
 
 Deno.test('sha256Hex coincide con hashlib', async () => {
   assertEquals(
@@ -52,37 +57,24 @@ Deno.test('la firma completa coincide con el calculo independiente', async () =>
   );
 });
 
-Deno.test('el monto sale de precio_base y suma adicionales', () => {
-  assertEquals(
-    centavosDeLaSolicitud({ precio_base: 41000, precio: 999, precio_adicionales: 5000 }),
-    4600000,
-  );
+Deno.test('el monto es `precio`, que ya lleva los adicionales dentro', () => {
+  // Caso real de produccion: precio 119900 con 49900 de adicionales se cobro
+  // por 119900. Sumarlos daria 169800 y cobraria los adicionales dos veces.
+  assertEquals(centavosDeLaSolicitud({ precio: 119900 }), 11990000);
 });
 
-Deno.test('sin precio_base se cae a precio, como hacian los widgets', () => {
-  assertEquals(
-    centavosDeLaSolicitud({ precio_base: null, precio: 30000, precio_adicionales: null }),
-    3000000,
-  );
+Deno.test('sin precio no hay cobro, y cero lo rechaza la funcion', () => {
+  assertEquals(centavosDeLaSolicitud({ precio: null }), 0);
 });
 
-Deno.test('todo nulo da cero, y cero lo rechaza la funcion', () => {
-  assertEquals(
-    centavosDeLaSolicitud({ precio_base: null, precio: null, precio_adicionales: null }),
-    0,
-  );
+Deno.test('el recibo se cobra por su total, sin recalcular', () => {
+  assertEquals(centavosDeRecibo(260000), 26000000);
+  assertEquals(centavosDeRecibo(null), 0);
 });
 
 Deno.test('el redondeo no pierde un centavo por el error de coma flotante', () => {
-  // 41000.1 + 0 = 41000.1; x100 en coma flotante da 4100009.999999999.
-  // Truncar cobraria 4100009. Se espera el redondeo.
-  assertEquals(
-    centavosDeLaSolicitud({ precio_base: 41000.1, precio: null, precio_adicionales: 0 }),
-    4100010,
-  );
-  // 0.1 + 0.2 = 0.30000000000000004
-  assertEquals(
-    centavosDeLaSolicitud({ precio_base: 0.1, precio: null, precio_adicionales: 0.2 }),
-    30,
-  );
+  // 41000.1 * 100 en coma flotante da 4100009.999999999; truncar cobraria
+  // 4100009. Se espera el redondeo.
+  assertEquals(centavosDeLaSolicitud({ precio: 41000.1 }), 4100010);
+  assertEquals(centavosDeRecibo(0.1 + 0.2), 30);
 });

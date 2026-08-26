@@ -38,7 +38,12 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sha256Hex, cadenaDeFirma, centavosDeLaSolicitud } from './firma.ts';
+import {
+  sha256Hex,
+  cadenaDeFirma,
+  centavosDeLaSolicitud,
+  centavosDeRecibo,
+} from './firma.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -182,13 +187,30 @@ Deno.serve(async (req) => {
     // solicitud, ver quien pide el cobro y cuanto vale de verdad.
     // ------------------------------------------------------------------
     if (accion === 'crear_cobro' || accion === 'crear_cobro_bancolombia') {
-      const { solicitud_id, acceptance_token } = cuerpo;
-      if (!solicitud_id) return error('Falta solicitud_id', 400, { field: 'solicitud_id' });
+      const { recibo_id, acceptance_token } = cuerpo;
+      let { solicitud_id } = cuerpo;
       if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+
+      // El cobro nace de un recibo o de una solicitud. Desde la app de
+      // Usuarios se paga un recibo; desde el admin y talento, la solicitud.
+      let totalDelRecibo: number | null = null;
+      if (recibo_id) {
+        const { data: recibo } = await admin
+          .from('recibos')
+          .select('id, solicitud_id, total, estado')
+          .eq('id', recibo_id)
+          .maybeSingle();
+        if (!recibo) return error('El recibo no existe', 404);
+        totalDelRecibo = recibo.total;
+        solicitud_id = recibo.solicitud_id;
+      }
+      if (!solicitud_id) {
+        return error('Falta solicitud_id o recibo_id', 400, { field: 'solicitud_id' });
+      }
 
       const { data: solicitud, error: errSol } = await admin
         .from('solicitudes_servicio')
-        .select('id, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago')
+        .select('id, usuario_id, profesional_id, precio, estado_pago')
         .eq('id', solicitud_id)
         .maybeSingle();
       if (errSol) {
@@ -218,16 +240,20 @@ Deno.serve(async (req) => {
         return error('Esta solicitud ya figura pagada', 409, { estado_pago: solicitud.estado_pago });
       }
 
-      const montoEnCentavos = centavosDeLaSolicitud(solicitud);
+      const montoEnCentavos = totalDelRecibo !== null
+        ? centavosDeRecibo(totalDelRecibo)
+        : centavosDeLaSolicitud(solicitud);
       if (montoEnCentavos <= 0) {
-        return error('La solicitud no tiene un precio valido', 422, { montoEnCentavos });
+        return error('No hay un importe valido que cobrar', 422, { montoEnCentavos });
       }
 
       const correo = await correoDe(admin, solicitud.usuario_id);
       if (!correo) return error('El cliente no tiene correo registrado', 422);
 
       const moneda = 'COP';
-      const referencia = `${solicitud.id}-${Date.now()}`;
+      // El reference identifica el cobro en Wompi y ha de ser unico. Se
+      // mantiene el formato que ya usaban admin y talento.
+      const referencia = `${recibo_id ?? solicitud.id}-${Date.now()}`;
 
       // --- transferencia Bancolombia, sin fuente de pago guardada ---
       if (accion === 'crear_cobro_bancolombia') {
@@ -345,10 +371,19 @@ Deno.serve(async (req) => {
       if (!token) return error('Falta token', 400, { field: 'token' });
       if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
 
-      // El metodo se registra siempre a nombre de quien llama y con el correo
-      // que tiene en la base: asi nadie registra medios de pago en otra cuenta.
-      const correo = (await correoDe(admin, user.id)) ?? user.email?.trim().toLowerCase();
-      if (!correo) return error('La cuenta no tiene correo registrado', 422);
+      // El metodo se registra siempre a nombre de QUIEN LLAMA: el usuario_id
+      // no se acepta del cliente, asi que nadie registra medios de pago en
+      // otra cuenta.
+      //
+      // El correo si se respeta cuando viene, porque DaviPlata pide el suyo en
+      // pantalla y no tiene por que ser el de Hulp. Es una etiqueta para
+      // Wompi, no da acceso a nada: lo que ata el metodo a la cuenta es el
+      // usuario_id con el que se guarda despues.
+      const correo = String(cuerpo.customer_email ?? '').trim().toLowerCase()
+        || (await correoDe(admin, user.id))
+        || user.email?.trim().toLowerCase();
+      if (!correo) return error('No hay correo para registrar el metodo', 422);
+      if (!correo.includes('@')) return error('El correo no es valido', 400, { field: 'customer_email' });
 
       // deno-lint-ignore no-explicit-any
       const payload: Record<string, any> = {

@@ -28,20 +28,35 @@ export function cadenaDeFirma(
 /** Lo que la solicitud vale, en centavos. */
 export interface PreciosDeSolicitud {
   precio: number | null;
-  precio_base: number | null;
-  precio_adicionales: number | null;
 }
 
 /**
- * El monto SIEMPRE se recalcula desde la solicitud, nunca se toma del cliente.
+ * El monto SIEMPRE se recalcula en el servidor, nunca se toma del cliente.
  *
- * Replica la formula de los widgets: precio_base, y si viene nulo se cae a
- * precio; luego se suman los adicionales. El redondeo va al final para no
- * arrastrar el error de los flotantes: 41000.1 * 100 da 4100009.999... y
- * truncar en vez de redondear cobraria un centavo de menos.
+ * `precio` es el TOTAL a cobrar y ya lleva los adicionales dentro. Se
+ * comprobo contra los cobros reales de produccion: de los diez ultimos con
+ * `precio_adicionales` distinto de cero, nueve se cobraron por exactamente
+ * `precio` y ninguno por `precio + precio_adicionales`.
+ *
+ * Por eso NO se suma `precio_adicionales`, que es el desglose informativo:
+ * sumarlo cobraria los adicionales dos veces. En un caso real —precio 119900
+ * con 49900 de adicionales— serian 169800 en lugar de 119900.
+ *
+ * Tampoco se usa `precio_base`, que es el precio de catalogo antes de
+ * ajustar: en esos mismos diez casos difiere de `precio` en nueve.
+ *
+ * El redondeo va al final para no arrastrar el error de los flotantes:
+ * 41000.1 * 100 da 4100009.999... y truncar cobraria un centavo de menos.
  */
 export function centavosDeLaSolicitud(s: PreciosDeSolicitud): number {
-  const base = s.precio_base ?? s.precio ?? 0;
-  const adicionales = s.precio_adicionales ?? 0;
-  return Math.round((base + adicionales) * 100);
+  return Math.round((s.precio ?? 0) * 100);
+}
+
+/**
+ * Lo que vale un recibo. Cuando el cobro nace de un recibo —que es como paga
+ * el cliente desde la app de Usuarios— el importe es su total, sin mas
+ * calculo: el recibo ya es el desglose cerrado y aceptado.
+ */
+export function centavosDeRecibo(total: number | null): number {
+  return Math.round((total ?? 0) * 100);
 }
