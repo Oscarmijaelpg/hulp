@@ -77,6 +77,9 @@ class _HistorialWidgetState extends State<HistorialWidget> {
       },
       child: Scaffold(
         key: scaffoldKey,
+        // El teclado se superpone en vez de encoger la pantalla: si no,
+        // el menu inferior sube y queda pegado sobre las teclas.
+        resizeToAvoidBottomInset: false,
         backgroundColor: FlutterFlowTheme.of(context).secondaryBackground,
         appBar: AppBar(
           backgroundColor: Color(0xFFFBFAF9),

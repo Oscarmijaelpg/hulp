@@ -113,7 +113,9 @@ class _CuadriculaCategoriasWidgetState
               maxCrossAxisExtent: 170.0,
               crossAxisSpacing: 12.0,
               mainAxisSpacing: 12.0,
-              childAspectRatio: 1.1,
+              // Más anchas que altas: dentro solo hay un icono de 24 y el
+              // nombre. Cuadradas dejaban la tarjeta medio vacía.
+              childAspectRatio: 1.7,
             ),
             itemCount: categorias.length,
             itemBuilder: (context, i) => _TarjetaCategoria(
@@ -158,20 +160,23 @@ class _TarjetaCategoria extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8.0),
-                child: imagen.isEmpty
-                    ? _SinImagen(tema: tema)
-                    : Image.network(
-                        imagen,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        // Una categoría sin imagen no debe dejar el icono roto
-                        // del navegador en mitad de la portada.
-                        errorBuilder: (_, __, ___) => _SinImagen(tema: tema),
-                      ),
-              ),
+            // El icono va a 24x24, que es el tamaño que tenían las tarjetas
+            // originales. Con `Expanded` ocupaba la tarjeta entera y, al ser
+            // iconos pequeños, `BoxFit.cover` los ampliaba hasta verse
+            // enormes y pixelados.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: imagen.isEmpty
+                  ? _SinImagen(tema: tema)
+                  : Image.network(
+                      imagen,
+                      width: 24.0,
+                      height: 24.0,
+                      fit: BoxFit.cover,
+                      // Una categoría sin imagen no debe dejar el icono roto
+                      // del navegador en mitad de la portada.
+                      errorBuilder: (_, __, ___) => _SinImagen(tema: tema),
+                    ),
             ),
             Padding(
               padding: const EdgeInsetsDirectional.fromSTEB(0.0, 6.0, 0.0, 0.0),
@@ -199,14 +204,17 @@ class _SinImagen extends StatelessWidget {
   const _SinImagen({required this.tema});
   final FlutterFlowTheme tema;
 
+  // Del mismo tamaño que el icono real, para que la tarjeta no dé un salto
+  // cuando una categoría se queda sin imagen.
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
+        width: 24.0,
+        height: 24.0,
         color: const Color(0xFFE9ECEF),
         child: Icon(
           Icons.photo_camera_outlined,
           color: tema.secondaryText,
-          size: 24.0,
+          size: 16.0,
         ),
       );
 }

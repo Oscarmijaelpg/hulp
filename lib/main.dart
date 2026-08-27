@@ -4,6 +4,7 @@ import '/custom_code/actions/index.dart' as actions;
 import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -21,6 +22,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoRouter.optionURLReflectsImperativeAPIs = true;
   usePathUrlStrategy();
+
+  // La app apunta a Android 15 (targetSdk 35), que dibuja de borde a borde
+  // sin pedir permiso: el contenido pasa por debajo de la barra de estado.
+  // Sin decirle nada, la barra quedaba negra y no se veían ni la hora ni la
+  // batería. Se pide transparente y con iconos oscuros, que es lo que pega
+  // sobre el fondo claro de la app.
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark, // Android
+    statusBarBrightness: Brightness.light, // iOS
+    systemNavigationBarColor: Colors.white,
+    systemNavigationBarIconBrightness: Brightness.dark,
+  ));
 
   await initializeDateFormatting('es', null);
 

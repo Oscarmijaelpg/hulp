@@ -255,12 +255,14 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
                     ],
                   ),
                 ),
+                // 48 de alto, como el resto de botones de la app. Estaba en
+                // 80 y el botón salía desproporcionado.
                 Container(
                   width: MediaQuery.sizeOf(context).width * 1.0,
-                  height: 80.0,
+                  height: 48.0,
                   child: custom_widgets.NequiVerificationButton(
                     width: MediaQuery.sizeOf(context).width * 1.0,
-                    height: 80.0,
+                    height: 48.0,
                     phoneNumber: _model.textController.text,
                     publicKey: FFDevEnvironmentValues().publicKey,
                     privateKey: FFDevEnvironmentValues().privateKey,

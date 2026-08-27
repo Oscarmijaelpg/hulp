@@ -18,3 +18,4 @@ assets/environment_values/environment.json
 assets/environment_values/environment_test.json
 assets/environment_values/environment_sandbox.json
 credencialesproduccion.txt
+android/.kotlin/

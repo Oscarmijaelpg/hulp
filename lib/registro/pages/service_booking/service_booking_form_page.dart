@@ -348,6 +348,25 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
     }
   }
 
+  /// Viste los diálogos de fecha y hora con el verde de la app.
+  ///
+  /// Sin esto salen con el morado que Material trae de fábrica, que no
+  /// aparece en ninguna otra parte de la aplicación.
+  Widget _conColoresDeLaApp(BuildContext context, Widget? child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: _kAccent,
+                onPrimary: Colors.white,
+                surface: Colors.white,
+                onSurface: _kTextPrimary,
+              ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(foregroundColor: _kAccent),
+          ),
+        ),
+        child: child!,
+      );
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -356,6 +375,7 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
       locale: const Locale('es'),
+      builder: _conColoresDeLaApp,
     );
     if (picked != null && mounted) {
       setState(() {
@@ -370,6 +390,7 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
       context: context,
       initialTime: TimeOfDay.now(),
       initialEntryMode: TimePickerEntryMode.input,
+      builder: _conColoresDeLaApp,
     );
     if (picked != null && mounted) {
       final hh = picked.hour.toString().padLeft(2, '0');
@@ -391,6 +412,9 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _kBg,
+      // El teclado se superpone en vez de encoger la pantalla: si no, la
+      // barra de abajo sube y queda pegada sobre las teclas.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: _kBg,
         elevation: 0,
