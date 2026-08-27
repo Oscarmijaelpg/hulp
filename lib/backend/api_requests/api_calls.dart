@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '/flutter_flow/flutter_flow_util.dart';
 import 'api_manager.dart';
+import '/backend/wompi_servidor.dart';
 
 export 'api_manager.dart' show ApiCallResponse;
 
@@ -253,6 +254,16 @@ class BancolombiaVerificacionIDPRODCall {
   }
 }
 
+/// Registra la cuenta Bancolombia como fuente de pago.
+///
+/// Iba directa a Wompi con la clave **publica**, y crear una fuente de pago
+/// requiere la privada: Wompi devolvia 401 y el registro no se completaba
+/// nunca. Es la razon por la que en un ano no hay ni un solo pago por
+/// Bancolombia, pese a que la opcion se ofrece en la pantalla de metodos.
+///
+/// Ahora lo hace la Edge Function `wompi`, igual que Nequi y DaviPlata. Se
+/// conserva la forma de `ApiCallResponse` con el cuerpo bajo `data` para que
+/// la pantalla —que lee `$.data.id` y `$.data.public_data.*`— no cambie.
 class BancolombiaPaymentsourcesCall {
   static Future<ApiCallResponse> call({
     String? token = '',
@@ -260,34 +271,28 @@ class BancolombiaPaymentsourcesCall {
     String? acceptanceToken = '',
     String? acceptPersonalAuth = '',
   }) async {
-    final baseUrl = FFDevEnvironmentValues().isProduction
-        ? 'https://production.wompi.co/v1'
-        : 'https://sandbox.wompi.co/v1';
-    final ffApiRequestBody = '''
-{
-  "type": "BANCOLOMBIA_TRANSFER",
-  "token": "${escapeStringForJson(token)}",
-  "payment_description": "Prueba",
-  "customer_email": "${escapeStringForJson(customerEmail)}",
-  "acceptance_token": "${escapeStringForJson(acceptanceToken)}",
-  "accept_personal_auth": "${escapeStringForJson(acceptPersonalAuth)}"
-}''';
-    return ApiManager.instance.makeApiCall(
-      callName: 'Bancolombia paymentsources',
-      apiUrl: '$baseUrl/payment_sources',
-      callType: ApiCallType.POST,
-      headers: {
-        'Authorization': 'Bearer ${FFDevEnvironmentValues().publicKey}',
-      },
-      params: {},
-      body: ffApiRequestBody,
-      bodyType: BodyType.JSON,
-      returnBody: true,
-      encodeBodyUtf8: false,
-      decodeUtf8: false,
-      cache: false,
-      isStreamingApi: false,
-      alwaysAllowBody: false,
+    final respuesta = await llamarWompi({
+      'accion': 'registrar_metodo_pago',
+      'tipo': 'BANCOLOMBIA_TRANSFER',
+      'token': token ?? '',
+      'acceptance_token': acceptanceToken ?? '',
+      'accept_personal_auth': acceptPersonalAuth ?? '',
+      'payment_description': 'Pago de servicio Hulp',
+      if ((customerEmail ?? '').trim().isNotEmpty)
+        'customer_email': customerEmail!.trim(),
+    });
+
+    if (respuesta['success'] == true) {
+      return ApiCallResponse({'data': respuesta['fullData']}, {}, 200);
+    }
+
+    // El codigo real viene en statusCode cuando el rechazo es de Wompi; si el
+    // fallo es de la propia funcion no hay ninguno, y 400 vale como generico.
+    final codigo = respuesta['statusCode'];
+    return ApiCallResponse(
+      respuesta,
+      {},
+      codigo is int ? codigo : 400,
     );
   }
 }
