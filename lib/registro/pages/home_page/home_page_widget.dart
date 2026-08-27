@@ -3,6 +3,7 @@ import '/backend/supabase/supabase.dart';
 import '/components/cuadricula_categorias_widget.dart';
 import '/components/menu_bar_widget.dart';
 import '/components/nueva_version_widget.dart';
+import '/registro/completar_datos/completar_datos_page.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/custom_code/actions/index.dart' as actions;
@@ -36,6 +37,15 @@ class _HomePageWidgetState extends State<HomePageWidget> {
 
     // On page load action.
     SchedulerBinding.instance.addPostFrameCallback((_) async {
+      // Las cuentas que entraron con Google o Apple no tienen ficha, y las
+      // que ya están dentro no vuelven a pasar por el login: si no se mira
+      // también aquí, esos 489 usuarios no completarían sus datos nunca.
+      if (loggedIn && await faltanDatosDelUsuario()) {
+        if (!mounted) return;
+        context.goNamed(CompletarDatosPage.routeName);
+        return;
+      }
+
       _model.versionApp = await actions.getVersion();
       _model.notificacionActiva = await actions.areNotificationsEnabled();
       _model.notificationEnabled = _model.notificacionActiva!;
@@ -138,6 +148,9 @@ class _HomePageWidgetState extends State<HomePageWidget> {
         },
         child: Scaffold(
           key: scaffoldKey,
+          // El teclado se superpone en vez de encoger la pantalla: si no,
+          // el menu inferior sube y queda pegado sobre las teclas.
+          resizeToAvoidBottomInset: false,
           backgroundColor: FlutterFlowTheme.of(context).secondaryBackground,
           body: Column(
             mainAxisSize: MainAxisSize.max,

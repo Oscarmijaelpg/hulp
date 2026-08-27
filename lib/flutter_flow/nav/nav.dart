@@ -13,6 +13,7 @@ import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 
 import '/index.dart';
+import '/registro/completar_datos/completar_datos_page.dart';
 import '/registro/pages/service_booking/service_booking_form_page.dart';
 import '/registro/pages/service_booking/booking_success_page.dart';
 
@@ -91,6 +92,13 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
               appStateNotifier.loggedIn ? HomePageWidget() : LoginWidget(),
         ),
         // ── REQ-001: rutas del flujo de reserva ──────────────────────────
+        // Se pide cuando la cuenta no tiene ficha completa: quien entra con
+        // Google o Apple nunca pasa por el registro.
+        FFRoute(
+          name: CompletarDatosPage.routeName,
+          path: CompletarDatosPage.routePath,
+          builder: (context, _) => const CompletarDatosPage(),
+        ),
         FFRoute(
           name: ServiceBookingFormPage.routeName,
           path: ServiceBookingFormPage.routePath,
