@@ -153,13 +153,29 @@ class SupabaseAuthManager extends AuthManager
       return authUser;
     } on AuthException catch (e) {
       final errorMsg = e.message.contains('User already registered')
-          ? 'Error: The email is already in use by a different account'
+          ? 'Ese correo ya está en uso por otra cuenta'
           : 'Error: ${e.message}';
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMsg)),
-      );
+      _avisar(context, errorMsg);
+      return null;
+    } catch (e) {
+      // Todo lo que no sea AuthException se perdía aquí: un fallo del lado de
+      // Google, de red o de configuración salía por arriba sin que nadie lo
+      // tratara, el callback moría y la pantalla se quedaba quieta. Quien lo
+      // sufría solo veía que «no pasa nada».
+      debugPrint('Fallo al iniciar sesión: $e');
+      _avisar(context, e.toString().replaceFirst('Exception: ', ''));
       return null;
     }
+  }
+
+  void _avisar(BuildContext context, String mensaje) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        duration: const Duration(seconds: 6),
+      ),
+    );
   }
 }

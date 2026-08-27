@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../backend/supabase/supabase.dart';
@@ -21,16 +22,34 @@ Future<User?> googleSignInFunc() async {
   );
 
   await googleSignIn.signOut().catchError((_) => null);
-  final googleUser = await googleSignIn.signIn();
-  final googleAuth = await googleUser!.authentication;
+
+  // `signIn()` devuelve null cuando la persona cierra el selector de cuentas,
+  // y lanza PlatformException cuando algo está mal configurado —el caso
+  // habitual es que la huella SHA-1 de la firma no esté dada de alta en el
+  // cliente OAuth de Android—. Con el `!` de antes, lo primero reventaba con
+  // un error de null y lo segundo salía por arriba sin que nadie lo tratara:
+  // en los dos casos la pantalla se quedaba quieta y sin decir nada.
+  final GoogleSignInAccount? googleUser;
+  try {
+    googleUser = await googleSignIn.signIn();
+  } on PlatformException catch (e) {
+    throw 'Google rechazó el inicio de sesión (${e.code}). '
+        '${e.message ?? ''}'.trim();
+  }
+  if (googleUser == null) {
+    // Cancelación deliberada: no es un fallo y no debe mostrar ningún error.
+    return null;
+  }
+
+  final googleAuth = await googleUser.authentication;
   final accessToken = googleAuth.accessToken;
   final idToken = googleAuth.idToken;
 
   if (accessToken == null) {
-    throw 'No Access Token found.';
+    throw 'Google no devolvió el token de acceso.';
   }
   if (idToken == null) {
-    throw 'No ID Token found.';
+    throw 'Google no devolvió el token de identidad.';
   }
 
   final authResponse = await SupaFlow.client.auth.signInWithIdToken(
