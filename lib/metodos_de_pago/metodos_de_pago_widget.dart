@@ -9,6 +9,16 @@ import 'package:provider/provider.dart';
 import 'metodos_de_pago_model.dart';
 export 'metodos_de_pago_model.dart';
 
+/// Wompi responde 404 «No hay una identidad de pago configurada para este
+/// comercio» a Bancolombia y DaviPlata: no estan contratados en la cuenta.
+/// Se ocultan hasta que Wompi los habilite; el codigo de sus pantallas queda
+/// intacto, basta con poner la bandera a true.
+///
+/// Comprobado el 2026-08-27 contra production.wompi.co con la clave publica
+/// de produccion. Nequi si respondio, por eso se queda visible.
+const bool _bancolombiaHabilitado = false;
+const bool _daviplataHabilitado = false;
+
 class MetodosDePagoWidget extends StatefulWidget {
   const MetodosDePagoWidget({super.key});
 
@@ -259,7 +269,8 @@ class _MetodosDePagoWidgetState extends State<MetodosDePagoWidget> {
                     ),
                   ),
                 ),
-                Padding(
+                if (_daviplataHabilitado)
+                  Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(16.0, 0.0, 16.0, 0.0),
                   child: InkWell(
                     splashColor: Colors.transparent,
@@ -324,7 +335,8 @@ class _MetodosDePagoWidgetState extends State<MetodosDePagoWidget> {
                     ),
                   ),
                 ),
-                Padding(
+                if (_bancolombiaHabilitado)
+                  Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(16.0, 0.0, 16.0, 0.0),
                   child: InkWell(
                     splashColor: Colors.transparent,

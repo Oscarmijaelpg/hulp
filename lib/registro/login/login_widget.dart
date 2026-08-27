@@ -14,6 +14,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'login_model.dart';
 export 'login_model.dart';
 
+/// Meta mantiene la aplicación en estado inactivo, así que el diálogo de
+/// Facebook falla para todo el mundo. Se pone a true cuando se reactive en
+/// developers.facebook.com; ahí también se ofrece el botón de «Continua con
+/// Facebook» del registro, que arrastra el mismo problema.
+const bool _facebookHabilitado = false;
+
 class LoginWidget extends StatefulWidget {
   const LoginWidget({super.key});
 
@@ -34,6 +40,13 @@ class _LoginWidgetState extends State<LoginWidget> {
   /// Si el usuario llegó al login por pulsar «Agendar» sin sesión, se le
   /// devuelve al formulario de ese servicio. Antes acababa siempre en la
   /// portada y tenía que buscar otra vez lo que ya había elegido.
+  ///
+  /// Esto tiene que ser **síncrono**: `prepareAuthEvent()` deja al router sin
+  /// notificaciones de cambio de sesión a la espera de que se navegue justo
+  /// después. Al meter aquí una consulta a la base para ver si faltaban datos,
+  /// el hueco de esa espera dejaba el login colgado —se elegía la cuenta de
+  /// Google y no pasaba nada—. Esa comprobación vive ahora en la portada, por
+  /// la que pasan todos igualmente.
   void _irADestinoTrasEntrar() {
     if (ServiceStore.hayPendiente) {
       context.goNamed(ServiceBookingFormPage.routeName);
@@ -53,6 +66,10 @@ class _LoginWidgetState extends State<LoginWidget> {
         queryFn: (q) => q,
       );
       _model.versionApp2 = await actions.getVersion();
+      // Sin esto la pantalla no se redibuja y el pie se queda con el valor de
+      // partida: en Android se leía «Version null», porque la rama de abajo
+      // para Android está vacía y nadie más provocaba un repintado.
+      safeSetState(() {});
       if (isAndroid == true) {
       } else {
         if (_model.appversionBackend?.firstOrNull?.testFlight != true) {
@@ -674,42 +691,10 @@ class _LoginWidgetState extends State<LoginWidget> {
                               if (user == null) {
                                 return;
                               }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Logueado',
-                                    style: FlutterFlowTheme.of(context)
-                                        .displayMedium
-                                        .override(
-                                          font: GoogleFonts.interTight(
-                                            fontWeight:
-                                                FlutterFlowTheme.of(context)
-                                                    .displayMedium
-                                                    .fontWeight,
-                                            fontStyle:
-                                                FlutterFlowTheme.of(context)
-                                                    .displayMedium
-                                                    .fontStyle,
-                                          ),
-                                          color: FlutterFlowTheme.of(context)
-                                              .secondaryBackground,
-                                          letterSpacing: 0.0,
-                                          fontWeight:
-                                              FlutterFlowTheme.of(context)
-                                                  .displayMedium
-                                                  .fontWeight,
-                                          fontStyle:
-                                              FlutterFlowTheme.of(context)
-                                                  .displayMedium
-                                                  .fontStyle,
-                                        ),
-                                  ),
-                                  duration: Duration(milliseconds: 4000),
-                                  backgroundColor:
-                                      FlutterFlowTheme.of(context).primary,
-                                ),
-                              );
-
+                              // Aqui salia un aviso de «Logueado» con estilo de
+                              // titular durante cuatro segundos. Entrar ya se
+                              // nota porque cambia la pantalla; el aviso solo
+                              // tapaba media pantalla al llegar.
                               _irADestinoTrasEntrar();
                             },
                             child: Container(
@@ -859,6 +844,13 @@ class _LoginWidgetState extends State<LoginWidget> {
                                 ),
                               ),
                             ),
+                          // Meta tiene la aplicación desactivada: el diálogo de
+                          // Facebook responde «La aplicación no está activa» a
+                          // todo el mundo, también en producción. De ahí que en
+                          // año y medio solo haya UNA cuenta entrada por aquí.
+                          // Se oculta hasta que se reactive en developers.
+                          // facebook.com; el código queda intacto.
+                          if (_facebookHabilitado)
                           InkWell(
                             splashColor: Colors.transparent,
                             focusColor: Colors.transparent,
@@ -1217,7 +1209,11 @@ class _LoginWidgetState extends State<LoginWidget> {
                         child: Container(
                           decoration: BoxDecoration(),
                           child: Text(
-                            'Version ${_model.versionApp2}',
+                            // Vacío mientras se lee: si no, el primer
+                            // fotograma enseña «Version null».
+                            _model.versionApp2 == null
+                                ? ''
+                                : 'Version ${_model.versionApp2}',
                             style: FlutterFlowTheme.of(context)
                                 .bodyMedium
                                 .override(
