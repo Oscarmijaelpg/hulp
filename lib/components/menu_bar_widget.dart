@@ -46,6 +46,12 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Alto real de la barra de sistema: los tres botones de Android ocupan
+    // más que el indicador del iPhone, y estaba fijo en 34 —la medida de
+    // iPhone—, así que en Android el menú quedaba pisado por los botones.
+    final margenSistema = MediaQuery.of(context).viewPadding.bottom;
+    final margenAbajo = margenSistema > 0 ? margenSistema + 8.0 : 20.0;
+
     return Align(
       alignment: AlignmentDirectional(0.0, 1.0),
       child: Container(
@@ -73,7 +79,7 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
           ),
         ),
         child: Padding(
-          padding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 34.0),
+          padding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, margenAbajo),
           child: Row(
             mainAxisSize: MainAxisSize.max,
             children: [
