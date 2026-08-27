@@ -90,7 +90,7 @@ Future<List<SelectedFile>?> selectMediaWithSourceBottomSheet({
                 padding: EdgeInsets.fromLTRB(0, 8, 0, 0),
                 child: ListTile(
                   title: Text(
-                    'Choose Source',
+                    'Elige de dónde',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.getFont(
                       pickerFontFamily,
@@ -107,30 +107,32 @@ Future<List<SelectedFile>?> selectMediaWithSourceBottomSheet({
             ],
             if (allowPhoto && allowVideo) ...[
               createUploadMediaListTile(
-                'Gallery (Photo)',
+                'Galería (foto)',
                 MediaSource.photoGallery,
               ),
               const Divider(),
               createUploadMediaListTile(
-                'Gallery (Video)',
+                'Galería (video)',
                 MediaSource.videoGallery,
               ),
             ] else if (allowPhoto)
               createUploadMediaListTile(
-                'Gallery',
+                'Galería',
                 MediaSource.photoGallery,
               )
             else
               createUploadMediaListTile(
-                'Gallery',
+                'Galería',
                 MediaSource.videoGallery,
               ),
             if (!kIsWeb) ...[
               const Divider(),
-              createUploadMediaListTile('Camera', MediaSource.camera),
+              createUploadMediaListTile('Cámara', MediaSource.camera),
               const Divider(),
             ],
-            const SizedBox(height: 10),
+            SizedBox(
+              height: 10 + MediaQuery.of(context).viewPadding.bottom,
+            ),
           ],
         );
       });
