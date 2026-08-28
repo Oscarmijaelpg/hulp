@@ -45,6 +45,12 @@
     <string>Se requiere el micrófono para grabar el audio de los videos que envías por el chat</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Se requiere la galería para elegir imágenes y enviarlas por el chat</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>La aplicación no solicita tu ubicación. iOS exige esta declaración porque el servicio de notificaciones que utilizamos incluye funciones de ubicación que la aplicación no activa.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>La aplicación no solicita tu ubicación. iOS exige esta declaración porque el servicio de notificaciones que utilizamos incluye funciones de ubicación que la aplicación no activa.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>La aplicación no solicita tu ubicación. iOS exige esta declaración porque el servicio de notificaciones que utilizamos incluye funciones de ubicación que la aplicación no activa.</string>
     <!-- Start of notificaciones -->
     <key>NSUserNotificationUsageDescription</key>
     <string>Habilite las notificaciones para recibir información sobre sus servicios solicitados.</string>
@@ -67,6 +73,12 @@
       <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>remote-notification</string>
+    </array>
+    <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
   </dict>
 </plist>
