@@ -721,7 +721,7 @@ class _Registro6WidgetState extends State<Registro6Widget> {
                                       'telefono_referencia':
                                           currentLoop2Item.telefono,
                                       'relacion_laboral':
-                                          currentLoop2Item.telefono,
+                                          currentLoop2Item.relacion,
                                     });
                                   }
                                 } else {
@@ -758,8 +758,18 @@ class _Registro6WidgetState extends State<Registro6Widget> {
                                 );
                               }),
                               Future(() async {
-                                if (FFAppState().registro.referencias.length >
-                                    0) {
+                                // La cuenta bancaria se guardaba solo si el
+                                // proveedor habia cargado referencias
+                                // laborales (la condicion venia copiada del
+                                // bloque de arriba), asi que quien no cargaba
+                                // referencias se quedaba sin datos de
+                                // facturacion. Ahora depende de sus propios
+                                // datos.
+                                if (FFAppState()
+                                        .registro
+                                        .numerodecuenta
+                                        .isNotEmpty ||
+                                    FFAppState().registro.entidad.isNotEmpty) {
                                   await CuentasBancariasTable().insert({
                                     'usuario_id': currentUserUid,
                                     'entidad_bancaria':

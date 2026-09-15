@@ -85,14 +85,14 @@ class _DashboardProveedorState extends State<DashboardProveedor> {
         .stream(primaryKey: ['id'])
         .eq('profesional_id', widget.proveedorId)
         .listen((_) {
-      if (_primeraEmisionStream) {
-        _primeraEmisionStream = false;
-        return;
-      }
-      if (mounted) {
-        _cargarDatos();
-      }
-    });
+          if (_primeraEmisionStream) {
+            _primeraEmisionStream = false;
+            return;
+          }
+          if (mounted) {
+            _cargarDatos();
+          }
+        });
   }
 
   @override
@@ -208,18 +208,16 @@ class _DashboardProveedorState extends State<DashboardProveedor> {
         double total = 0;
         if (response != null) {
           for (var item in response) {
-            // Ingreso del proveedor = mano de obra NETA (precio_base, con
-            // comisión Wompi 2,65% + $700 + IVA 19% + 25% de Hulp) MÁS los
-            // materiales completos (precio_adicionales son reembolso: el
-            // proveedor ya los pagó, no llevan comisión). `precio` es fallback
-            // legacy si no hay precio_base.
+            // Ingreso del proveedor = 72% del total que paga el cliente,
+            // adicionales incluidos. `precio` es fallback legacy si no hay
+            // precio_base.
             final base = double.tryParse(
                     (item['precio_base'] ?? item['precio'] ?? 0).toString()) ??
                 0;
-            final adicionales = double.tryParse(
-                    (item['precio_adicionales'] ?? 0).toString()) ??
-                0;
-            total += calcularIngresoProveedor(base) + adicionales;
+            final adicionales =
+                double.tryParse((item['precio_adicionales'] ?? 0).toString()) ??
+                    0;
+            total += calcularIngresoProveedor(base + adicionales);
           }
         }
 

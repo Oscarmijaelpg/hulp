@@ -323,14 +323,6 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                     ),
                                   );
                                   await TransaccionesTable().insert({
-                                    'numero_transaccion': getJsonField(
-                                      _model.pago3,
-                                      r'''$.transactionId''',
-                                    )?.toString(),
-                                    'referencia_externa': getJsonField(
-                                      _model.pago3,
-                                      r'''$.reference''',
-                                    )?.toString(),
                                     // Lo que Wompi confirmo, no lo que calculo la app.
                                     // Sin esto no hay forma de auditar un cobro.
                                     'datos_pago': getJsonField(
@@ -422,15 +414,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                           FlutterFlowTheme.of(context).primary,
                                     ),
                                   );
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'profesional_id': '',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
+                                  // El trabajo ya es suyo aunque el cobro falle: poner
+                                  // profesional_id en null lo desasignaba y el servicio
+                                  // desaparecia de su lista.
                                   if (_shouldSetState) safeSetState(() {});
                                   return;
                                 } else {
@@ -448,15 +434,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                           FlutterFlowTheme.of(context).primary,
                                     ),
                                   );
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'profesional_id': '',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
+                                  // El trabajo ya es suyo aunque el cobro falle: poner
+                                  // profesional_id en null lo desasignaba y el servicio
+                                  // desaparecia de su lista.
                                   if (_shouldSetState) safeSetState(() {});
                                   return;
                                 }
@@ -475,15 +455,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                         FlutterFlowTheme.of(context).primary,
                                   ),
                                 );
-                                await SolicitudesServicioTable().update(
-                                  data: {
-                                    'profesional_id': '',
-                                  },
-                                  matchingRows: (rows) => rows.eqOrNull(
-                                    'id',
-                                    widget!.idservicio,
-                                  ),
-                                );
+                                // El trabajo ya es suyo aunque el cobro falle: poner
+                                // profesional_id en null lo desasignaba y el servicio
+                                // desaparecia de su lista.
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
@@ -516,15 +490,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                       FlutterFlowTheme.of(context).secondary,
                                 ),
                               );
-                              await SolicitudesServicioTable().update(
-                                data: {
-                                  'profesional_id': '',
-                                },
-                                matchingRows: (rows) => rows.eqOrNull(
-                                  'id',
-                                  widget!.idservicio,
-                                ),
-                              );
+                              // El trabajo ya es suyo aunque el cobro falle: poner
+                              // profesional_id en null lo desasignaba y el servicio
+                              // desaparecia de su lista.
                               if (_shouldSetState) safeSetState(() {});
                               return;
                             }
@@ -539,15 +507,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                             _shouldSetState = true;
                             if (_model.tarjeta == null ||
                                 _model.tarjeta!.isEmpty) {
-                              await SolicitudesServicioTable().update(
-                                data: {
-                                  'profesional_id': null,
-                                },
-                                matchingRows: (rows) => rows.eqOrNull(
-                                  'id',
-                                  widget!.idservicio,
-                                ),
-                              );
+                              // El trabajo ya es suyo aunque el cobro falle: poner
+                              // profesional_id en null lo desasignaba y el servicio
+                              // desaparecia de su lista.
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -651,14 +613,6 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                     ),
                                   );
                                   await TransaccionesTable().insert({
-                                    'numero_transaccion': getJsonField(
-                                      _model.pago,
-                                      r'''$.transactionId''',
-                                    )?.toString(),
-                                    'referencia_externa': getJsonField(
-                                      _model.pago,
-                                      r'''$.reference''',
-                                    )?.toString(),
                                     // Lo que Wompi confirmo, no lo que calculo la app.
                                     // Sin esto no hay forma de auditar un cobro.
                                     'datos_pago': getJsonField(
@@ -746,15 +700,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                           FlutterFlowTheme.of(context).primary,
                                     ),
                                   );
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'profesional_id': '',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
+                                  // El trabajo ya es suyo aunque el cobro falle: poner
+                                  // profesional_id en null lo desasignaba y el servicio
+                                  // desaparecia de su lista.
                                   if (_shouldSetState) safeSetState(() {});
                                   return;
                                 } else {
@@ -772,28 +720,16 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                           FlutterFlowTheme.of(context).primary,
                                     ),
                                   );
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'profesional_id': '',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
+                                  // El trabajo ya es suyo aunque el cobro falle: poner
+                                  // profesional_id en null lo desasignaba y el servicio
+                                  // desaparecia de su lista.
                                   if (_shouldSetState) safeSetState(() {});
                                   return;
                                 }
                               } else {
-                                await SolicitudesServicioTable().update(
-                                  data: {
-                                    'profesional_id': '',
-                                  },
-                                  matchingRows: (rows) => rows.eqOrNull(
-                                    'id',
-                                    widget!.idservicio,
-                                  ),
-                                );
+                                // El trabajo ya es suyo aunque el cobro falle: poner
+                                // profesional_id en null lo desasignaba y el servicio
+                                // desaparecia de su lista.
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
@@ -826,15 +762,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                                       FlutterFlowTheme.of(context).primary,
                                 ),
                               );
-                              await SolicitudesServicioTable().update(
-                                data: {
-                                  'profesional_id': '',
-                                },
-                                matchingRows: (rows) => rows.eqOrNull(
-                                  'id',
-                                  widget!.idservicio,
-                                ),
-                              );
+                              // El trabajo ya es suyo aunque el cobro falle: poner
+                              // profesional_id en null lo desasignaba y el servicio
+                              // desaparecia de su lista.
                               if (_shouldSetState) safeSetState(() {});
                               return;
                             }

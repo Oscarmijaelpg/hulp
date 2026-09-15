@@ -141,7 +141,7 @@ class _SoporteSeleccionWidgetState extends State<SoporteSeleccionWidget> {
                           ));
                           FFAppState().update(() {});
                           await widget.action?.call(
-                            'Hola 👋 Si el cliente no se presenta, por favor espera al menos 15 minutos e intenta contactarlo por el chat de la app.  📌Si no recibes respuesta, por favor escribe el mensaje “Cliente ausente” + número de solicitud en nuestra línea de soporte. Si confirmamos la ausencia, recibirás una compensación del 25% del valor base del servicio. Tu id de servicio es: ${widget!.idServicio}',
+                            'Hola 👋 Si el cliente no se presenta, por favor espera al menos 15 minutos e intenta contactarlo por el chat de la app.  📌Si no recibes respuesta, por favor escribe el mensaje “Cliente ausente” + número de solicitud en nuestra línea de soporte. Si confirmamos la ausencia, revisaremos tu caso. Tu id de servicio es: ${widget!.idServicio}',
                           );
                         },
                         child: Container(
@@ -199,7 +199,7 @@ class _SoporteSeleccionWidgetState extends State<SoporteSeleccionWidget> {
                           ));
                           _model.updatePage(() {});
                           await widget.action?.call(
-                            'Hola 👋 Si el servicio no puede realizarse en el lugar, intenta contactar al cliente por el chat y espera 15 minutos. 📌 Si el problema persiste, por favor escribe el mensaje “Visita fallida” + número de solicitud en nuestra línea de soporte: Si el caso está debidamente justificado, recibirás una compensación del 15% del valor base. Tu id de servicio es: ${widget!.idServicio}',
+                            'Hola 👋 Si el servicio no puede realizarse en el lugar, intenta contactar al cliente por el chat y espera 15 minutos. 📌 Si el problema persiste, por favor escribe el mensaje “Visita fallida” + número de solicitud en nuestra línea de soporte: Si el caso está debidamente justificado, revisaremos tu caso. Tu id de servicio es: ${widget!.idServicio}',
                           );
                         },
                         child: Container(

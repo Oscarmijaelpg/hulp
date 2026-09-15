@@ -53,7 +53,13 @@ class _MenWidgetState extends State<MenWidget> {
     // iPhone—, así que en Android el menú quedaba pisado por los botones.
     // Con gestos el hueco es menor, y sin barra alguna se deja un margen
     // mínimo para que no toque el borde.
-    final margenSistema = MediaQuery.of(context).viewPadding.bottom;
+    // `viewPadding` es la medida real de la barra del sistema; si un ancestro
+    // ya la consumió (un SafeArea por encima) llega en 0 y hay que caer en
+    // `padding`, que sí refleja lo que queda por respetar.
+    final medidas = MediaQuery.of(context);
+    final margenSistema = medidas.viewPadding.bottom > 0
+        ? medidas.viewPadding.bottom
+        : medidas.padding.bottom;
     final margenAbajo = margenSistema > 0 ? margenSistema + 8.0 : 20.0;
 
     return Align(

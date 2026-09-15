@@ -4,6 +4,8 @@ import '/backend/schema/structs/index.dart';
 import '/backend/supabase/supabase.dart';
 import '/components/cancelar_servicio_widget.dart';
 import '/components/enlace_mapa_widget.dart';
+import '/flutter_flow/filtros_seguros.dart';
+import '/components/nombre_cliente_widget.dart';
 import '/components/finalizar_servicio_widget.dart';
 import '/components/lista_vacia_widget.dart';
 import '/components/men_widget.dart';
@@ -902,6 +904,9 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       ].divide(SizedBox(width: 8.0)),
                                                                                                     ),
                                                                                                   ),
+                                                                                                  NombreClienteWidget(
+                                                                                                    usuarioId: serviciosentItem.usuarioId,
+                                                                                                  ),
                                                                                                   EnlaceMapaWidget(
                                                                                                     latitud: serviciosentItem.latitud,
                                                                                                     longitud: serviciosentItem.longitud,
@@ -1007,7 +1012,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                                                       children: [
                                                                                                         Text(
-                                                                                                          'Precio',
+                                                                                                          'Tu pago',
                                                                                                           style: FlutterFlowTheme.of(context).bodyMedium.override(
                                                                                                                 font: GoogleFonts.inter(
                                                                                                                   fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
@@ -1023,13 +1028,13 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                         Flexible(
                                                                                                           child: Text(
                                                                                                             valueOrDefault<String>(
-                                                                                                              '${functions.formatPrices(valueOrDefault<double>(
+                                                                                                              '${functions.formatPrices(functions.calcularIngresoProveedor(valueOrDefault<double>(
                                                                                                                     serviciosentItem.precio,
                                                                                                                     0.0,
                                                                                                                   ) + valueOrDefault<double>(
                                                                                                                     serviciosentItem.precioAdicionales,
                                                                                                                     0.0,
-                                                                                                                  ))} COP',
+                                                                                                                  )))} COP',
                                                                                                               '\$0 COP',
                                                                                                             ),
                                                                                                             style: FlutterFlowTheme.of(context).bodyMedium.override(
@@ -1234,16 +1239,23 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                             .toList()
                                                                           // Orden descendente por fecha y hora del servicio (el más futuro primero).
                                                                           ..sort((a, b) {
-                                                                            final porFecha = b.fecha.compareTo(a.fecha);
-                                                                            if (porFecha != 0) {
+                                                                            final porFecha =
+                                                                                b.fecha.compareTo(a.fecha);
+                                                                            if (porFecha !=
+                                                                                0) {
                                                                               return porFecha;
                                                                             }
-                                                                            final horaA = a.hora.time;
-                                                                            final horaB = b.hora.time;
-                                                                            if (horaA == null || horaB == null) {
+                                                                            final horaA =
+                                                                                a.hora.time;
+                                                                            final horaB =
+                                                                                b.hora.time;
+                                                                            if (horaA == null ||
+                                                                                horaB == null) {
                                                                               return 0;
                                                                             }
-                                                                            return (horaB.hour * 3600 + horaB.minute * 60 + horaB.second).compareTo(horaA.hour * 3600 + horaA.minute * 60 + horaA.second);
+                                                                            return (horaB.hour * 3600 + horaB.minute * 60 + horaB.second).compareTo(horaA.hour * 3600 +
+                                                                                horaA.minute * 60 +
+                                                                                horaA.second);
                                                                           });
                                                                         if (solicitudesAceptadasx
                                                                             .isEmpty) {
@@ -1557,6 +1569,9 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                 ].divide(SizedBox(width: 8.0)),
                                                                                               ),
                                                                                             ),
+                                                                                            NombreClienteWidget(
+                                                                                              usuarioId: solicitudesAceptadasxItem.usuarioId,
+                                                                                            ),
                                                                                             EnlaceMapaWidget(
                                                                                               latitud: solicitudesAceptadasxItem.latitud,
                                                                                               longitud: solicitudesAceptadasxItem.longitud,
@@ -1664,7 +1679,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                                                 children: [
                                                                                                   Text(
-                                                                                                    'Precio',
+                                                                                                    'Tu pago',
                                                                                                     style: FlutterFlowTheme.of(context).bodyMedium.override(
                                                                                                           font: GoogleFonts.inter(
                                                                                                             fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
@@ -1682,7 +1697,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       valueOrDefault<String>(
                                                                                                         '${valueOrDefault<String>(
                                                                                                           formatNumber(
-                                                                                                            solicitudesAceptadasxItem.precio + (solicitudesAceptadasxItem.precioAdicionales!),
+                                                                                                            functions.calcularIngresoProveedor(solicitudesAceptadasxItem.precio + (solicitudesAceptadasxItem.precioAdicionales ?? 0.0)),
                                                                                                             formatType: FormatType.custom,
                                                                                                             currency: '\$',
                                                                                                             format: '',
@@ -1759,6 +1774,23 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                             ),
                                                                                                           );
 
+                                                                                                          if (_model.vvsid?.firstOrNull == null) {
+                                                                                                            // La solicitud ya no existe (la borraron desde el admin): abrir
+                                                                                                            // el chat sin servicio mostraba la conversacion de otro cliente.
+                                                                                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                                                                              SnackBar(
+                                                                                                                content: Text(
+                                                                                                                  'Esta solicitud ya no está disponible.',
+                                                                                                                  style: TextStyle(color: FlutterFlowTheme.of(context).primaryBackground),
+                                                                                                                ),
+                                                                                                                duration: Duration(milliseconds: 4000),
+                                                                                                                backgroundColor: FlutterFlowTheme.of(context).error,
+                                                                                                              ),
+                                                                                                            );
+                                                                                                            safeSetState(() {});
+                                                                                                            return;
+                                                                                                          }
+
                                                                                                           context.pushNamed(
                                                                                                             ChatWidget.routeName,
                                                                                                             queryParameters: {
@@ -1808,7 +1840,9 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                             queryFn: (q) => q
                                                                                                                 .eqOrNull(
                                                                                                                   'chat_id',
-                                                                                                                  stackChatsSolicitudRow?.id,
+                                                                                                                  // Sin chat el filtro se anulaba y contaba
+                                                                                                                  // los no leidos de toda la base.
+                                                                                                                  stackChatsSolicitudRow?.id ?? idInexistente,
                                                                                                                 )
                                                                                                                 .neqOrNull(
                                                                                                                   'remitente_id',
@@ -2232,21 +2266,20 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                             Builder(
                                                                           builder:
                                                                               (context) {
-                                                                            final serviciosFinalizados =
-                                                                                containerSolicitudesServicioRowList.where((e) => (e.estado == 'finalizadas') || (e.estado == 'canceladas')).toList()
-                                                                                  // Orden descendente por fecha y hora del servicio (el más reciente primero).
-                                                                                  ..sort((a, b) {
-                                                                                    final porFecha = b.fecha.compareTo(a.fecha);
-                                                                                    if (porFecha != 0) {
-                                                                                      return porFecha;
-                                                                                    }
-                                                                                    final horaA = a.hora.time;
-                                                                                    final horaB = b.hora.time;
-                                                                                    if (horaA == null || horaB == null) {
-                                                                                      return 0;
-                                                                                    }
-                                                                                    return (horaB.hour * 3600 + horaB.minute * 60 + horaB.second).compareTo(horaA.hour * 3600 + horaA.minute * 60 + horaA.second);
-                                                                                  });
+                                                                            final serviciosFinalizados = containerSolicitudesServicioRowList.where((e) => (e.estado == 'finalizadas') || (e.estado == 'canceladas')).toList()
+                                                                              // Orden descendente por fecha y hora del servicio (el más reciente primero).
+                                                                              ..sort((a, b) {
+                                                                                final porFecha = b.fecha.compareTo(a.fecha);
+                                                                                if (porFecha != 0) {
+                                                                                  return porFecha;
+                                                                                }
+                                                                                final horaA = a.hora.time;
+                                                                                final horaB = b.hora.time;
+                                                                                if (horaA == null || horaB == null) {
+                                                                                  return 0;
+                                                                                }
+                                                                                return (horaB.hour * 3600 + horaB.minute * 60 + horaB.second).compareTo(horaA.hour * 3600 + horaA.minute * 60 + horaA.second);
+                                                                              });
                                                                             if (serviciosFinalizados.isEmpty) {
                                                                               return ListaVaciaWidget(
                                                                                 texto: 'No hay solicitudes finalizadas',
@@ -2320,7 +2353,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                     ),
                                                                                                   ),
                                                                                                   Text(
-                                                                                                    '\$${(serviciosFinalizadosItem.precio + (serviciosFinalizadosItem.precioAdicionales!)).toString()} COP',
+                                                                                                    '\$${functions.formatPrices(functions.calcularIngresoProveedor(serviciosFinalizadosItem.precio + (serviciosFinalizadosItem.precioAdicionales ?? 0.0)))} COP',
                                                                                                     style: FlutterFlowTheme.of(context).bodyMedium.override(
                                                                                                           font: GoogleFonts.inter(
                                                                                                             fontWeight: FontWeight.w600,
@@ -2389,6 +2422,9 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       ),
                                                                                                     ].divide(SizedBox(width: 8.0)),
                                                                                                   ),
+                                                                                                ),
+                                                                                                NombreClienteWidget(
+                                                                                                  usuarioId: serviciosFinalizadosItem.usuarioId,
                                                                                                 ),
                                                                                                 Padding(
                                                                                                   padding: EdgeInsets.all(8.0),
@@ -2591,6 +2627,23 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                     serviciosFinalizadosItem.id,
                                                                                                   ),
                                                                                                 );
+
+                                                                                                if (_model.vvsidd?.firstOrNull == null) {
+                                                                                                  // La solicitud ya no existe (la borraron desde el admin): abrir
+                                                                                                  // el chat sin servicio mostraba la conversacion de otro cliente.
+                                                                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                                                                    SnackBar(
+                                                                                                      content: Text(
+                                                                                                        'Esta solicitud ya no está disponible.',
+                                                                                                        style: TextStyle(color: FlutterFlowTheme.of(context).primaryBackground),
+                                                                                                      ),
+                                                                                                      duration: Duration(milliseconds: 4000),
+                                                                                                      backgroundColor: FlutterFlowTheme.of(context).error,
+                                                                                                    ),
+                                                                                                  );
+                                                                                                  safeSetState(() {});
+                                                                                                  return;
+                                                                                                }
 
                                                                                                 context.pushNamed(
                                                                                                   ChatWidget.routeName,

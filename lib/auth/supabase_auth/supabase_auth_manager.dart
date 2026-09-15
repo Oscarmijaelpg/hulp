@@ -134,7 +134,16 @@ class SupabaseAuthManager extends AuthManager
     Future<User?> Function() signInFunc,
   ) async {
     try {
-      final user = await signInFunc();
+      User? user;
+      try {
+        user = await signInFunc();
+      } on AuthRetryableFetchException {
+        // Corte de red a mitad de la petición (el clásico "Connection reset by
+        // peer"). Un solo reintento resuelve la mayoría, y evita que el
+        // usuario tenga que volver a escribir sus datos.
+        await Future.delayed(const Duration(seconds: 2));
+        user = await signInFunc();
+      }
       final authUser = user == null ? null : TalentoHulpSupabaseUser(user);
 
       // Update currentUser here in case user info needs to be used immediately
@@ -147,9 +156,16 @@ class SupabaseAuthManager extends AuthManager
       }
       return authUser;
     } on AuthException catch (e) {
-      final errorMsg = e.message.contains('User already registered')
-          ? 'Error: The email is already in use by a different account'
-          : 'Error: ${e.message!}';
+      // Los fallos de red llegan envueltos como AuthRetryableFetchException
+      // con el texto crudo del socket dentro ("ClientException with
+      // SocketException..."), que al usuario no le dice nada ni le indica qué
+      // hacer.
+      final errorMsg = e is AuthRetryableFetchException ||
+              _esFalloDeRed(e.message)
+          ? 'No pudimos conectarnos. Revisa tu conexión a internet e inténtalo de nuevo.'
+          : e.message.contains('User already registered')
+              ? 'Error: The email is already in use by a different account'
+              : 'Error: ${e.message!}';
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMsg)),
@@ -157,4 +173,14 @@ class SupabaseAuthManager extends AuthManager
       return null;
     }
   }
+
+  /// Reconoce los mensajes de error que en realidad son un fallo de conexión.
+  bool _esFalloDeRed(String mensaje) => const [
+        'SocketException',
+        'ClientException',
+        'Failed host lookup',
+        'Connection reset',
+        'Connection closed',
+        'Connection timed out',
+      ].any(mensaje.contains);
 }

@@ -1,5 +1,6 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
+import '/flutter_flow/filtros_seguros.dart';
 import '/components/advertencia_mensajes_widget.dart';
 import '/components/mensajes_widget.dart';
 import '/components/seleccionar_mensaje_widget.dart';
@@ -49,13 +50,18 @@ class _ChatWidgetState extends State<ChatWidget> {
       _model.chatdato = await ChatsSolicitudTable().queryRows(
         queryFn: (q) => q.eqOrNull(
           'solicitud_id',
-          widget!.servicio?.solicitudId,
+          // Sin este respaldo, una solicitud ya borrada deja el filtro vacio y
+          // la consulta devuelve los chats de todos los clientes.
+          widget!.servicio?.solicitudId ?? idInexistente,
         ),
       );
-      await actions.leerMensajes(
-        _model.chatdato!.firstOrNull!.id,
-        currentUserUid,
-      );
+      final chat = _model.chatdato?.firstOrNull;
+      if (chat != null) {
+        await actions.leerMensajes(
+          chat.id,
+          currentUserUid,
+        );
+      }
     });
 
     _model.textController ??= TextEditingController();
@@ -135,7 +141,7 @@ class _ChatWidgetState extends State<ChatWidget> {
                       .stream(primaryKey: ['id'])
                       .eqOrNull(
                         'solicitud_id',
-                        widget!.servicio?.solicitudId,
+                        widget!.servicio?.solicitudId ?? idInexistente,
                       )
                       .map((list) =>
                           list.map((item) => ChatsSolicitudRow(item)).toList()),
@@ -175,7 +181,8 @@ class _ChatWidgetState extends State<ChatWidget> {
                                       .stream(primaryKey: ['id'])
                                       .eqOrNull(
                                         'chat_id',
-                                        containerChatsSolicitudRow?.id,
+                                        containerChatsSolicitudRow?.id ??
+                                            idInexistente,
                                       )
                                       .order('enviado_en')
                                       .map((list) => list

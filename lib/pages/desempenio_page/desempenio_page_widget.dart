@@ -54,14 +54,14 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
         .stream(primaryKey: ['id'])
         .eq('profesional_id', currentUserUid)
         .listen((_) {
-      if (_primeraEmisionStream) {
-        _primeraEmisionStream = false;
-        return;
-      }
-      if (mounted) {
-        _cargarIngresosSemana();
-      }
-    });
+          if (_primeraEmisionStream) {
+            _primeraEmisionStream = false;
+            return;
+          }
+          if (mounted) {
+            _cargarIngresosSemana();
+          }
+        });
 
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
   }
@@ -87,14 +87,14 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
 
       double total = 0;
       for (var item in response) {
-        // Ingreso del proveedor = mano de obra NETA (precio_base) + materiales
-        // completos (precio_adicionales son reembolso, sin comisión).
+        // El 72% se aplica sobre el total que paga el cliente, adicionales
+        // incluidos: antes los adicionales se sumaban enteros.
         final base = double.tryParse(
                 (item['precio_base'] ?? item['precio'] ?? 0).toString()) ??
             0;
         final adicionales =
             double.tryParse((item['precio_adicionales'] ?? 0).toString()) ?? 0;
-        total += functions.calcularIngresoProveedor(base) + adicionales;
+        total += functions.calcularIngresoProveedor(base + adicionales);
       }
       if (mounted) {
         safeSetState(() => _ingresosSemanaActual = total);

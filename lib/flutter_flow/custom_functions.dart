@@ -110,27 +110,30 @@ int stringToIngeter(String texto) {
       0; // Convert text to integer, return 0 if conversion fails
 }
 
+/// Porcentaje de lo que paga el cliente que recibe el talento.
+const double porcentajeTalento = 0.72;
+
 double calcularIngresoProveedor(double? monto) {
-  // Ingreso neto del talento sobre el precio base de un servicio:
-  // descuenta comisión Wompi (2.65% + $700) + IVA del 19% sobre la comisión,
-  // y entrega el 75% al proveedor. No suma adicionales (materiales).
+  // El talento recibe el 72% de lo que paga el cliente, sin más descuentos.
+  //
+  // Antes esto descontaba la comisión de Wompi (2,65% + $700) más su IVA y
+  // entregaba el 75% del resto. Daba un 72,01% que variaba con el importe
+  // ($71.937 sobre $99.900 en vez de $71.928) y, sobre todo, no es la regla
+  // acordada: el 72% se aplica sobre el total que paga el cliente, incluida
+  // la mano de obra adicional, que antes se sumaba entera.
   final m = monto ?? 0;
   if (m <= 0) return 0;
-  final comisionConIva = (m * 0.0265 + 700) * 1.19;
-  final neto = (m - comisionConIva) * 0.75;
-  return neto < 0 ? 0 : neto;
+  return m * porcentajeTalento;
 }
 
 double calcularIngresoProveedorAgregado(
     double? totalBruto, double? cantidadTransacciones) {
-  // Versión agregada: el componente fijo de $700 se aplica por transacción,
-  // por lo que necesita la cantidad de servicios para descontarlo correctamente.
+  // Con un porcentaje plano ya no hace falta la cantidad de servicios (el
+  // antiguo componente fijo de $700 se cobraba por transacción). El parámetro
+  // se conserva porque lo pasan las pantallas generadas.
   final total = totalBruto ?? 0;
-  final n = cantidadTransacciones ?? 0;
   if (total <= 0) return 0;
-  final comisionConIva = (total * 0.0265 + 700 * n) * 1.19;
-  final neto = (total - comisionConIva) * 0.75;
-  return neto < 0 ? 0 : neto;
+  return total * porcentajeTalento;
 }
 
 String formatPrices(double valor) {
