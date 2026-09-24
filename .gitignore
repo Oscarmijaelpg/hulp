@@ -19,3 +19,6 @@ assets/environment_values/environment_test.json
 assets/environment_values/environment_sandbox.json
 credencialesproduccion.txt
 android/.kotlin/
+
+# APKs de pruebas guardados fuera de build/
+apks-test/
