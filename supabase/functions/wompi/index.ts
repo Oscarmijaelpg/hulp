@@ -132,13 +132,49 @@ async function predeterminadoDe(admin: Cliente, usuarioId: string): Promise<stri
   return t?.payment_source_id ? String(t.payment_source_id) : null;
 }
 
+/**
+ * Deja constancia de un intento de cobro en `intentos_cobro`.
+ *
+ * Hasta ahora un cobro rechazado no dejaba rastro en ningun sitio: la tabla
+ * `transacciones` solo se escribe tras un APPROVED y los logs de la funcion
+ * se retienen una hora. Cuando alguien decia "no me deja cobrar" no habia
+ * forma de saber por que.
+ *
+ * Nunca interrumpe el cobro: si el registro falla, se anota y se sigue.
+ */
+async function registrarIntento(
+  admin: Cliente,
+  fila: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { error: errIntento } = await admin.from('intentos_cobro').insert(fila);
+    if (errIntento) console.error('No se pudo registrar el intento:', errIntento);
+  } catch (e) {
+    console.error('No se pudo registrar el intento:', e);
+  }
+}
+
 /** Traduce el error de Wompi a algo legible sin perder el detalle. */
-async function fallo(respuesta: Response, contexto: string): Promise<Response> {
+async function fallo(
+  respuesta: Response,
+  contexto: string,
+  registro?: { admin: Cliente; base: Record<string, unknown> },
+): Promise<Response> {
   const datos = await respuesta.json().catch(() => ({}));
   console.error(`Wompi rechazo ${contexto}:`, respuesta.status, JSON.stringify(datos));
+  const motivo = datos?.error?.reason ?? datos?.error?.type ?? `Error en ${contexto}`;
+  if (registro) {
+    await registrarIntento(registro.admin, {
+      ...registro.base,
+      resultado: 'error',
+      wompi_status: String(respuesta.status),
+      wompi_mensaje: String(motivo),
+      detalle: datos,
+    });
+  }
   return responder({
     success: false,
-    error: datos?.error?.reason ?? datos?.error?.type ?? `Error en ${contexto}`,
+    error: motivo,
     statusCode: respuesta.status,
     details: datos,
   }, 502);
@@ -210,7 +246,7 @@ Deno.serve(async (req) => {
 
       const { data: solicitud, error: errSol } = await admin
         .from('solicitudes_servicio')
-        .select('id, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago')
+        .select('id, ticket, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago')
         .eq('id', solicitud_id)
         .maybeSingle();
       if (errSol) {
@@ -227,28 +263,55 @@ Deno.serve(async (req) => {
         .eq('id', user.id)
         .maybeSingle();
 
+      // Lo que se sabe del intento antes de hablar con Wompi. Cada salida de
+      // aqui en adelante deja una fila en `intentos_cobro`.
+      const baseIntento: Record<string, unknown> = {
+        solicitud_id: solicitud.id,
+        recibo_id: recibo_id ?? null,
+        ticket: solicitud.ticket ?? null,
+        usuario_id: user.id,
+        rol_solicitante: quien?.rol ?? null,
+        metodo: accion === 'crear_cobro_bancolombia' ? 'BANCOLOMBIA_TRANSFER' : 'CARD',
+      };
+
+      /** Rechazo antes de llegar a Wompi: se registra y se responde. */
+      const rechazar = async (
+        mensaje: string,
+        status: number,
+        extra: Record<string, unknown> = {},
+      ): Promise<Response> => {
+        await registrarIntento(admin, {
+          ...baseIntento,
+          resultado: 'rechazado',
+          wompi_mensaje: mensaje,
+          detalle: extra,
+        });
+        return error(mensaje, status, extra);
+      };
+
       const autorizado = quien?.rol === 'admin'
         || user.id === solicitud.usuario_id
         || user.id === solicitud.profesional_id;
       if (!autorizado) {
         console.warn(`Cobro rechazado: ${user.id} no participa en ${solicitud_id}`);
-        return error('No autorizado para cobrar esta solicitud', 403);
+        return await rechazar('No autorizado para cobrar esta solicitud', 403);
       }
 
       // Sin esto, dos toques seguidos en el boton pasan dos veces por Wompi.
       if (solicitud.estado_pago === 'pagado' && cuerpo.reintentar !== true) {
-        return error('Esta solicitud ya figura pagada', 409, { estado_pago: solicitud.estado_pago });
+        return await rechazar('Esta solicitud ya figura pagada', 409, { estado_pago: solicitud.estado_pago });
       }
 
       const montoEnCentavos = totalDelRecibo !== null
         ? centavosDeRecibo(totalDelRecibo)
         : centavosDeLaSolicitud(solicitud);
+      baseIntento.monto_centavos = montoEnCentavos;
       if (montoEnCentavos <= 0) {
-        return error('No hay un importe valido que cobrar', 422, { montoEnCentavos });
+        return await rechazar('No hay un importe valido que cobrar', 422, { montoEnCentavos });
       }
 
       const correo = await correoDe(admin, solicitud.usuario_id);
-      if (!correo) return error('El cliente no tiene correo registrado', 422);
+      if (!correo) return await rechazar('El cliente no tiene correo registrado', 422);
 
       const moneda = 'COP';
       // El reference identifica el cobro en Wompi y ha de ser unico. Se
@@ -276,11 +339,19 @@ Deno.serve(async (req) => {
             },
           }),
         });
-        if (!respuesta.ok) return await fallo(respuesta, 'la transferencia Bancolombia');
+        if (!respuesta.ok) return await fallo(respuesta, 'la transferencia Bancolombia', { admin, base: baseIntento });
 
         const datos = await respuesta.json();
         const t = datos.data ?? {};
         console.log(`Transferencia creada ${t.id} · solicitud ${solicitud.id} · ${montoEnCentavos}`);
+        await registrarIntento(admin, {
+          ...baseIntento,
+          resultado: t.status === 'APPROVED' ? 'aprobado' : 'pendiente',
+          wompi_status: t.status ?? null,
+          wompi_mensaje: t.status_message ?? null,
+          wompi_transaction_id: t.id ?? null,
+          detalle: t,
+        });
         return responder({
           success: true,
           transactionId: t.id,
@@ -303,12 +374,12 @@ Deno.serve(async (req) => {
         // Tiene que ser del cliente de ESTA solicitud, no de quien llama: el
         // admin cobra en nombre del cliente.
         if (!await esDelCliente(admin, paymentSourceId, solicitud.usuario_id)) {
-          return error('El metodo de pago no es de este cliente', 403);
+          return await rechazar('El metodo de pago no es de este cliente', 403);
         }
       } else {
         paymentSourceId = await predeterminadoDe(admin, solicitud.usuario_id);
         if (!paymentSourceId) {
-          return error('El cliente no tiene metodo de pago predeterminado', 422);
+          return await rechazar('El cliente no tiene metodo de pago predeterminado', 422);
         }
       }
 
@@ -330,11 +401,23 @@ Deno.serve(async (req) => {
           signature: firma,
         }),
       });
-      if (!respuesta.ok) return await fallo(respuesta, 'la transaccion');
+      if (!respuesta.ok) return await fallo(respuesta, 'la transaccion', { admin, base: baseIntento });
 
       const datos = await respuesta.json();
       const t = datos.data ?? {};
       console.log(`Cobro creado ${t.id} · solicitud ${solicitud.id} · ${montoEnCentavos} · ${t.status}`);
+      // Wompi acepta la peticion (200) aunque la tarjeta se caiga: el veredicto
+      // viene en `status`, por eso DECLINED se registra aqui y no en fallo().
+      await registrarIntento(admin, {
+        ...baseIntento,
+        resultado: t.status === 'APPROVED'
+          ? 'aprobado'
+          : (t.status === 'DECLINED' || t.status === 'ERROR' ? 'rechazado' : 'pendiente'),
+        wompi_status: t.status ?? null,
+        wompi_mensaje: t.status_message ?? null,
+        wompi_transaction_id: t.id ?? null,
+        detalle: t,
+      });
 
       // Misma forma que devolvia createTransaction, para que el cliente siga
       // haciendo su polling con la clave publica sin cambiar nada mas.

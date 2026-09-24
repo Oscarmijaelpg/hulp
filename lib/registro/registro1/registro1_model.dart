@@ -99,6 +99,24 @@ class Registro1Model extends FlutterFlowModel<Registro1Widget> {
     return null;
   }
 
+  /// Ciudades en las que opera Hulp, leidas de la tabla `ciudades`.
+  ///
+  /// Arranca vacia y se rellena al abrir la pantalla: si la consulta falla, el
+  /// desplegable queda sin opciones en vez de ofrecer ciudades inventadas.
+  List<String> ciudades = [];
+
+  Future<void> cargarCiudades() async {
+    try {
+      final filas = await CiudadesTable().queryRows(
+        queryFn: (q) =>
+            q.eqOrNull('activo', true).order('nombre', ascending: true),
+      );
+      ciudades = filas.map((c) => c.nombre).toList();
+    } catch (e) {
+      print('No se pudieron cargar las ciudades: $e');
+    }
+  }
+
   // State field(s) for dropdownCiudad widget.
   String? dropdownCiudadValue;
   FormFieldController<String>? dropdownCiudadValueController;

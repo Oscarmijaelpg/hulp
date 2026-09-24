@@ -31,6 +31,7 @@ export 'tables/vw_categorias_proveedores.dart';
 export 'tables/soporte.dart';
 export 'tables/vw_profesionales_completo.dart';
 export 'tables/categorias.dart';
+export 'tables/ciudades.dart';
 export 'tables/mensajes_chat.dart';
 export 'tables/cuentas_bancarias.dart';
 export 'tables/vw_solicitudes_servicios_completa.dart';

@@ -40,6 +40,8 @@ class _Registro1WidgetState extends State<Registro1Widget> {
 
     // On page load action.
     SchedulerBinding.instance.addPostFrameCallback((_) async {
+      await _model.cargarCiudades();
+      safeSetState(() {});
       if (FFAppState().registro.redesSociales.length < 2) {
         FFAppState().updateRegistroStruct(
           (e) => e
@@ -1109,14 +1111,11 @@ class _Registro1WidgetState extends State<Registro1Widget> {
                                     _model.dropdownCiudadValue ??=
                                         FFAppState().registro.ciudad,
                                   ),
-                                  options: [
-                                    'Cali',
-                                    'Jamundi',
-                                    'Palmira',
-                                    'Bogota',
-                                    'Chia',
-                                    'Soacha'
-                                  ],
+                                  // Antes era una lista escrita a mano con seis
+                                  // ciudades sin tildes («Bogota», «Jamundi»)
+                                  // que no cruzaban con las que usan la app de
+                                  // Usuarios y el admin al crear una solicitud.
+                                  options: _model.ciudades,
                                   onChanged: (val) => safeSetState(
                                       () => _model.dropdownCiudadValue = val),
                                   width: MediaQuery.sizeOf(context).width * 1.0,

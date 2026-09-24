@@ -26,6 +26,44 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 class SolicitudesModel extends FlutterFlowModel<SolicitudesWidget> {
+  /// Id de la ciudad del proveedor, resuelto desde el nombre que guarda su
+  /// ficha (`usuarios.ciudad` es texto libre, no una clave ajena).
+  ///
+  /// Queda en null si el proveedor no tiene ciudad o si su nombre no esta en
+  /// la tabla `ciudades`; en ese caso no se filtra nada, que es preferible a
+  /// dejarlo sin trabajo por un dato mal escrito.
+  String? ciudadIdProveedor;
+
+  Future<void> cargarCiudadDelProveedor() async {
+    try {
+      final ficha = await SupaFlow.client
+          .from('usuarios')
+          .select('ciudad')
+          .eq('id', currentUserUid)
+          .maybeSingle();
+      final nombre = ficha?['ciudad']?.toString().trim() ?? '';
+      if (nombre.isEmpty) return;
+
+      final ciudad = await CiudadesTable().querySingleRow(
+        queryFn: (q) => q.eqOrNull('nombre', nombre),
+      );
+      ciudadIdProveedor = ciudad.firstOrNull?.id;
+    } catch (e) {
+      print('No se pudo resolver la ciudad del proveedor: $e');
+    }
+  }
+
+  /// Una solicitud entrante se le ofrece al proveedor si es de su ciudad.
+  ///
+  /// Las solicitudes anteriores a que existiera `ciudad_id` no tienen ciudad
+  /// (85 de 95 al 22/09/2026): esas se siguen mostrando a todos, porque
+  /// esconderlas las dejaria sin que nadie las pueda atender.
+  bool esDeMiCiudad(String? ciudadIdSolicitud) {
+    if (ciudadIdProveedor == null) return true;
+    if (ciudadIdSolicitud == null || ciudadIdSolicitud.isEmpty) return true;
+    return ciudadIdSolicitud == ciudadIdProveedor;
+  }
+
   ///  Local state fields for this page.
 
   bool notificationEnabled = false;

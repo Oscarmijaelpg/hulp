@@ -51,6 +51,8 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
 
     // On page load action.
     SchedulerBinding.instance.addPostFrameCallback((_) async {
+      await _model.cargarCiudadDelProveedor();
+      safeSetState(() {});
       _model.notificacionActiva = await actions.areNotificationsEnabled();
       _model.notificationEnabled = _model.notificacionActiva!;
       safeSetState(() {});
@@ -714,7 +716,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                             builder:
                                                                                 (context) {
                                                                               // REQ-001: orden ascendente por fecha y hora de la reserva.
-                                                                              final serviciosent = containerSolicitudesServicioRowList.where((e) => e.estado == 'entrantes').toList()
+                                                                              final serviciosent = containerSolicitudesServicioRowList.where((e) => e.estado == 'entrantes' && _model.esDeMiCiudad(e.ciudadId)).toList()
                                                                                 ..sort((a, b) {
                                                                                   final porFecha = a.fecha.compareTo(b.fecha);
                                                                                   if (porFecha != 0) {

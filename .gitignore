@@ -57,3 +57,6 @@ assets/environment_values/environment*.json
 assets/environment_values/environment.json
 assets/environment_values/environment_test.json
 supabase/.temp/
+
+# APKs de pruebas guardados fuera de build/
+apks-test/
