@@ -8,9 +8,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/registro/pages/historial/historial_widget.dart';
 import 'booking_args_store.dart';
+import '/components/menu_bar_widget.dart';
 
 // ── Tokens de color (SPEC §1.1) ───────────────────────────────────────────────
-const _kPrimary = Color(0xFF1A3C2E);
 const _kButton = Color(0xFF157867);
 const _kPrimaryLight = Color(0xFFE8F5EE);
 const _kAccent = Color(0xFF2D8653);
@@ -108,8 +108,11 @@ class _BookingSuccessPageState extends State<BookingSuccessPage> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+        // Hueco inferior para que el contenido no quede bajo el menú flotante.
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -202,7 +205,11 @@ class _BookingSuccessPageState extends State<BookingSuccessPage> {
           ],
         ),
       ),
-      bottomNavigationBar: const _HulpBottomNav(currentIndex: 1),
+          // El mismo menú que el resto de la app: esta pantalla llevaba uno
+          // propio y se notaba el salto al llegar aquí desde el agendamiento.
+          const MenuBarWidget(index: 0),
+        ],
+      ),
     );
   }
 }
@@ -487,43 +494,3 @@ class _InfoBanner extends StatelessWidget {
   }
 }
 
-class _HulpBottomNav extends StatelessWidget {
-  const _HulpBottomNav({required this.currentIndex});
-  final int currentIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: _kBg,
-        boxShadow: [
-          BoxShadow(blurRadius: 12, color: Color(0x14000000), offset: Offset(0, -2)),
-        ],
-      ),
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        selectedItemColor: _kPrimary,
-        unselectedItemColor: _kTextSecondary,
-        selectedLabelStyle:
-            GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500),
-        unselectedLabelStyle: GoogleFonts.inter(fontSize: 12),
-        items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Inicio'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.access_time_outlined),
-              activeIcon: Icon(Icons.access_time),
-              label: 'Solicitudes'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Cuenta'),
-        ],
-      ),
-    );
-  }
-}

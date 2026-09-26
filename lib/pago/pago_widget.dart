@@ -2,6 +2,8 @@ import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_icon_button.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
+import '/registro/pages/service_booking/booking_args_store.dart';
+import '/registro/pages/service_booking/service_booking_form_page.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/flutter_flow/flutter_flow_widgets.dart';
 import '/custom_code/actions/index.dart' as actions;
@@ -741,7 +743,30 @@ class _PagoWidgetState extends State<PagoWidget> {
                               'predeterminada': true,
                               'apodo': 'Mi tarjeta',
                             });
-                            context.safePop();
+                            // Aviso antes de volver: si se venia de agendar un
+                            // servicio, la pantalla anterior aparece de golpe y
+                            // sin esto no queda claro si la tarjeta se guardo.
+                            await _avisarTarjetaGuardada(
+                              getJsonField(_model.tokenizeResult,
+                                      r'''$.brand''')
+                                  .toString(),
+                              getJsonField(_model.tokenizeResult,
+                                      r'''$.lastFour''')
+                                  .toString(),
+                            );
+                            if (mounted) {
+                              if (FlujoMetodoPago.desdeAgendamiento) {
+                                // Venia de agendar: se salta las pantallas
+                                // intermedias (mis tarjetas y metodos de pago)
+                                // y vuelve directo a la solicitud a medias.
+                                Navigator.of(context).popUntil((ruta) =>
+                                    ruta.settings.name ==
+                                        ServiceBookingFormPage.routeName ||
+                                    ruta.isFirst);
+                              } else {
+                                context.safePop();
+                              }
+                            }
                             if (_shouldSetState) safeSetState(() {});
                             return;
                           } else {
@@ -845,4 +870,90 @@ class _PagoWidgetState extends State<PagoWidget> {
       ),
     );
   }
+
+  /// Confirmacion de que la tarjeta quedo guardada.
+  ///
+  /// Se muestra sobre la pantalla de pago y se cierra sola al pulsar; recien
+  /// entonces se vuelve a donde estaba el usuario (el agendamiento, si venia
+  /// de ahi), para que el aviso no se pierda en la transicion.
+  Future<void> _avisarTarjetaGuardada(String marca, String ultimosCuatro) async {
+    if (!mounted) return;
+    final tema = FlutterFlowTheme.of(context);
+    final detalle = [
+      if (marca.isNotEmpty && marca != 'null') marca,
+      if (ultimosCuatro.isNotEmpty && ultimosCuatro != 'null')
+        '•••• $ultimosCuatro',
+    ].join('  ');
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: tema.secondaryBackground,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64.0,
+              height: 64.0,
+              decoration: BoxDecoration(
+                color: tema.success.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.check_rounded, size: 38.0, color: tema.success),
+            ),
+            const SizedBox(height: 16.0),
+            Text(
+              'Tarjeta guardada',
+              textAlign: TextAlign.center,
+              style: tema.headlineSmall.override(
+                font: GoogleFonts.interTight(fontWeight: FontWeight.w600),
+                fontSize: 20.0,
+              ),
+            ),
+            if (detalle.isNotEmpty) ...[
+              const SizedBox(height: 6.0),
+              Text(
+                detalle,
+                textAlign: TextAlign.center,
+                style: tema.bodyMedium.override(
+                  font: GoogleFonts.inter(),
+                  color: tema.secondaryText,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8.0),
+            Text(
+              'Ya puedes usarla para pagar tus servicios.',
+              textAlign: TextAlign.center,
+              style: tema.bodySmall.override(
+                font: GoogleFonts.inter(),
+                color: tema.secondaryText,
+              ),
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FFButtonWidget(
+            onPressed: () => Navigator.pop(ctx),
+            text: 'Continuar',
+            options: FFButtonOptions(
+              width: 180.0,
+              height: 44.0,
+              color: tema.primary,
+              textStyle: tema.titleSmall.override(
+                font: GoogleFonts.interTight(fontWeight: FontWeight.w600),
+                color: Colors.white,
+              ),
+              borderRadius: BorderRadius.circular(10.0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 }

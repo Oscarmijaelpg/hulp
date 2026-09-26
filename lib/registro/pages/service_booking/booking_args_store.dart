@@ -74,3 +74,19 @@ class BookingSuccessArgsData {
   final String direccion;
   final String? complemento;
 }
+
+/// Marca que el usuario salió del agendamiento a dar de alta un método de pago.
+///
+/// La pantalla de pago está tres niveles por debajo del formulario
+/// (agendamiento → métodos de pago → mis tarjetas → pago), así que al guardar
+/// la tarjeta un solo «atrás» dejaba al usuario a medio camino, lejos de la
+/// solicitud que estaba creando. Con esta marca la pantalla de pago sabe que
+/// tiene que devolverlo al formulario de una vez.
+///
+/// Si llega a métodos de pago desde el menú, la marca está apagada y el
+/// comportamiento es el de siempre: se queda viendo sus tarjetas.
+class FlujoMetodoPago {
+  FlujoMetodoPago._();
+
+  static bool desdeAgendamiento = false;
+}

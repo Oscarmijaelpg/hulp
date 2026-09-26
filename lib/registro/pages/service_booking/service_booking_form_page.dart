@@ -344,7 +344,14 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
       ),
     );
     if (ir == true && mounted) {
+      FlujoMetodoPago.desdeAgendamiento = true;
       await context.pushNamed(MetodosDePagoWidget.routeName);
+      FlujoMetodoPago.desdeAgendamiento = false;
+      // Al volver puede que ya tenga tarjeta: se reintenta el agendamiento en
+      // vez de obligarle a pulsar «Agendar» otra vez sin explicación.
+      if (mounted && await _tieneMetodoPago()) {
+        await _onAgendar();
+      }
     }
   }
 
@@ -410,6 +417,9 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final altoTeclado = MediaQuery.of(context).viewInsets.bottom;
+    final tecladoAbierto = altoTeclado > 0;
+
     return Scaffold(
       backgroundColor: _kBg,
       // El teclado se superpone en vez de encoger la pantalla: si no, la
@@ -432,8 +442,11 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
         children: [
           SingleChildScrollView(
             // Padding inferior extra para que el contenido no quede tapado por
-            // el menú inferior flotante (MenuBarWidget).
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
+            // el menú inferior flotante (MenuBarWidget). Con el teclado abierto
+            // el menú se esconde y ese hueco lo ocupa el teclado, para que el
+            // campo enfocado quede a la vista y no debajo de las teclas.
+            padding: EdgeInsets.fromLTRB(
+                20, 16, 20, tecladoAbierto ? altoTeclado + 24 : 120),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -546,7 +559,9 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
           ),
           // Menú inferior compartido, anclado al fondo (patrón estándar del
           // resto de la app). MenuBarWidget ya se alinea abajo internamente.
-          const MenuBarWidget(index: 0),
+          // Se esconde con el teclado abierto: si no, queda flotando sobre las
+          // teclas tapando justo el campo que se está escribiendo.
+          if (!tecladoAbierto) const MenuBarWidget(index: 0),
         ],
       ),
     );
@@ -826,14 +841,51 @@ class _TimeChip extends StatelessWidget {
   }
 }
 
-class _ComplementoField extends StatelessWidget {
+class _ComplementoField extends StatefulWidget {
   const _ComplementoField({required this.controller});
   final TextEditingController controller;
 
   @override
+  State<_ComplementoField> createState() => _ComplementoFieldState();
+}
+
+class _ComplementoFieldState extends State<_ComplementoField> {
+  final _foco = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // El Scaffold no encoge con el teclado (el menú flotante quedaría sobre
+    // las teclas), así que el desplazamiento hasta el campo lo hacemos aquí.
+    // El retardo espera a que el teclado termine de subir: antes de eso la
+    // altura visible todavía es la de pantalla completa y no se movería nada.
+    _foco.addListener(() {
+      if (!_foco.hasFocus) return;
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (!mounted || !_foco.hasFocus) return;
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _foco.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
+      controller: widget.controller,
+      focusNode: _foco,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => FocusScope.of(context).unfocus(),
       maxLines: 2,
       minLines: 2,
       style: GoogleFonts.inter(fontSize: 15, color: _kTextPrimary),
