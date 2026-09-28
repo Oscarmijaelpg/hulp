@@ -63,6 +63,12 @@ Future<User?> appleSignInFunc() async {
           if (credential.givenName != null) 'given_name': credential.givenName,
           if (credential.familyName != null)
             'family_name': credential.familyName,
+          // Tambien como nombre completo: es la clave que miran las pantallas
+          // de perfil, y sin ella volviamos a pedir un dato que Apple ya dio.
+          'full_name': [credential.givenName, credential.familyName]
+              .where((p) => p != null && p.trim().isNotEmpty)
+              .join(' ')
+              .trim(),
         }),
       );
     } catch (_) {

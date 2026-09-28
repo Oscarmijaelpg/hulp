@@ -495,7 +495,7 @@ class _LoginWidgetState extends State<LoginWidget> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'El usuario no es usuario',
+                                  'Esta cuenta es de proveedor. Para ofrecer servicios usa la app Talento Hulp.',
                                   style: TextStyle(
                                     color: FlutterFlowTheme.of(context)
                                         .primaryBackground,

@@ -92,8 +92,29 @@ class _CompletarDatosPageState extends State<CompletarDatosPage> {
       }
 
       // Google y Apple mandan el nombre completo en un solo campo.
+      //
+      // No sirve `currentUserDisplayName`: nadie lo rellena en el arranque de
+      // Supabase, asi que siempre llega vacio. El dato bueno esta en los
+      // metadatos que deja el proveedor al entrar, y Apple **solo los manda la
+      // primera vez**. Sin leerlos de aqui, la pantalla volvia a pedir el
+      // nombre que Apple acababa de dar (guideline 4 de la App Store).
       if (_nombres.text.isEmpty) {
-        final completo = (currentUserDisplayName).trim();
+        final meta = SupaFlow.client.auth.currentUser?.userMetadata ?? {};
+        String dato(String clave) => (meta[clave] ?? '').toString().trim();
+        final nombrePila = dato('given_name');
+        final apellido = dato('family_name');
+        if (nombrePila.isNotEmpty || apellido.isNotEmpty) {
+          _nombres.text = nombrePila;
+          if (_apellidos.text.isEmpty) _apellidos.text = apellido;
+        }
+      }
+      if (_nombres.text.isEmpty) {
+        final meta = SupaFlow.client.auth.currentUser?.userMetadata ?? {};
+        final completo = [
+          (meta['full_name'] ?? '').toString(),
+          (meta['name'] ?? '').toString(),
+          currentUserDisplayName,
+        ].firstWhere((v) => v.trim().isNotEmpty, orElse: () => '').trim();
         if (completo.isNotEmpty) {
           final partes = completo.split(RegExp(r'\s+'));
           _nombres.text = partes.first;
@@ -114,11 +135,9 @@ class _CompletarDatosPageState extends State<CompletarDatosPage> {
     if (_apellidos.text.trim().isEmpty) {
       errores['apellidos'] = 'Faltan tus apellidos';
     }
-    if (_tipoDocumento == null) errores['tipo'] = 'Elige el tipo de documento';
-    if (_documento.text.trim().isEmpty) {
-      errores['documento'] = 'Falta el número de documento';
-    }
-
+    // El documento es opcional: no hace falta para pedir un servicio, y Apple
+    // rechaza pedir datos personales que la funcion principal no necesita
+    // (guideline 5.1.1). Si se escribe, se comprueba que tenga sentido.
     final doc = _documento.text.trim().replaceAll(RegExp(r'\s'), '');
     if (doc.isNotEmpty && doc.length < 5) {
       errores['documento'] = 'Ese documento es demasiado corto';
@@ -149,7 +168,8 @@ class _CompletarDatosPageState extends State<CompletarDatosPage> {
       'nombres': _nombres.text.trim(),
       'apellidos': _apellidos.text.trim(),
       'tipo_documento': _tipoDocumento,
-      'numero_documento': _documento.text.trim(),
+      'numero_documento':
+          _documento.text.trim().isEmpty ? null : _documento.text.trim(),
       'telefono': _telefono.text.trim(),
       'direccion': _direccion.text.trim(),
       'pais': 'Colombia',
@@ -250,8 +270,10 @@ class _CompletarDatosPageState extends State<CompletarDatosPage> {
                           _campo('Apellidos', _apellidos, 'apellidos',
                               capitalizar: true),
                           _desplegableTipoDocumento(),
-                          _campo('Número de documento', _documento, 'documento',
-                              teclado: TextInputType.number),
+                          _campo('Número de documento (opcional)', _documento,
+                              'documento',
+                              teclado: TextInputType.number,
+                              obligatorio: false),
                           _campo('Teléfono', _telefono, 'telefono',
                               teclado: TextInputType.phone, prefijo: '+57 '),
                           _campo('Dirección (opcional)', _direccion, 'direccion',
@@ -410,7 +432,7 @@ class _CompletarDatosPageState extends State<CompletarDatosPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Tipo de documento *',
+            'Tipo de documento (opcional)',
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w500,
@@ -473,9 +495,11 @@ Future<bool> faltanDatosDelUsuario() async {
     if (ficha == null) return true;
 
     bool vacio(String? v) => v == null || v.trim().isEmpty;
+    // El documento no entra en la cuenta: es opcional desde que Apple lo
+    // observo (guideline 5.1.1). Si siguiera aqui, a quien no lo diera se le
+    // volveria a mandar a esta pantalla en cada arranque.
     return vacio(ficha.nombres) ||
         vacio(ficha.apellidos) ||
-        vacio(ficha.numeroDocumento) ||
         vacio(ficha.telefono);
   } catch (e) {
     // Ante un fallo de red no se bloquea la entrada: es preferible dejar
