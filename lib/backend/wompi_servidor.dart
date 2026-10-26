@@ -10,8 +10,8 @@ import '/backend/supabase/supabase.dart';
 ///
 /// Lo que se queda en el cliente es lo que va con la clave PUBLICA: pedir el
 /// token de aceptacion, tokenizar la tarjeta, los `/tokens/*` de Nequi y
-/// DaviPlata, y consultar el estado de la transaccion. Esa clave esta pensada
-/// para viajar en el cliente.
+/// DaviPlata. La consulta del estado tambien pasa por esta Edge Function,
+/// mediante la accion consultar_transaccion.
 ///
 /// La respuesta conserva la forma que devolvian las acciones de FlutterFlow
 /// —`success`, `transactionId`, `status`...— para que los widgets no cambien.

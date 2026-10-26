@@ -182,6 +182,11 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                         widget.recibo!.id,
                         FFDevEnvironmentValues().integrityKey,
                         FFDevEnvironmentValues().isProduction,
+                        personalDataAuthToken: getJsonField(
+                              _model.aceptaceToken,
+                              r'''$.personalDataAuthToken''',
+                            )?.toString() ??
+                            '',
                       );
                       _shouldSetState = true;
                       if (getJsonField(

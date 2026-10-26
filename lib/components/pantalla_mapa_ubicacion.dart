@@ -35,8 +35,8 @@ class UbicacionElegida {
 /// milímetros.
 ///
 /// Al abrirse busca la ubicación actual. Si no la consigue —permiso denegado,
-/// GPS apagado, dentro de un edificio— arranca en Bogotá y se puede buscar la
-/// dirección, que es la salida para cuando el servicio no es donde estás.
+/// GPS apagado, dentro de un edificio— o el dispositivo está fuera de
+/// Colombia, arranca en Bogotá. La dirección también se puede buscar.
 class PantallaMapaUbicacion extends StatefulWidget {
   const PantallaMapaUbicacion({
     super.key,
@@ -108,12 +108,22 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
 
   /// Al soltar el mapa: se pregunta qué hay en el centro.
   Future<void> _resolverCentro() async {
+    final centroConsultado = _centro;
     setState(() => _resolviendo = true);
-    final r = await _places.ubicacionDe(_centro.latitude, _centro.longitude);
-    if (!mounted) return;
+    final r = await _places.ubicacionDe(
+        centroConsultado.latitude, centroConsultado.longitude);
+    if (!mounted || centroConsultado != _centro) return;
     setState(() {
       _resolviendo = false;
-      if (r == null) return;
+      if (r == null) {
+        _direccion = '';
+        _ciudad = null;
+        _ciudadDetectada = null;
+        _aviso =
+            'No se pudo obtener la dirección. Intenta seleccionar el punto de nuevo.';
+        return;
+      }
+      _aviso = null;
       _direccion = r.direccion;
       _ciudadDetectada = r.ciudad;
       _ciudad = widget.ciudades
@@ -155,6 +165,14 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
       );
       if (!mounted) return;
       final destino = LatLng(pos.latitude, pos.longitude);
+      // Emuladores y teléfonos fuera del país pueden reportar una ubicación de
+      // Estados Unidos. Al abrir el selector se conserva Bogotá como punto de
+      // partida; el botón de ubicación sí permite centrar en el GPS actual.
+      if (inicial &&
+          Coordenadas(pos.latitude, pos.longitude).pareceFueraDeColombia) {
+        await _resolverCentro();
+        return;
+      }
       setState(() => _centro = destino);
       await _mover(destino);
       await _resolverCentro();
@@ -205,7 +223,7 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
     if (ciudad == null) return;
     Navigator.of(context).pop(UbicacionElegida(
       coordenadas: Coordenadas(_centro.latitude, _centro.longitude),
-      direccion: _direccion,
+      direccion: limpiarDireccion(_direccion),
       ciudad: ciudad,
     ));
   }
