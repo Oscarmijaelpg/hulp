@@ -24,6 +24,10 @@ class NequiRegistroWidget extends StatefulWidget {
 
 class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
   late NequiRegistroModel _model;
+  bool _cargandoTokens = true;
+  String? _errorTokens;
+  String _acceptanceToken = '';
+  String _personalDataAuthToken = '';
 
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -32,22 +36,65 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
     super.initState();
     _model = createModel(context, () => NequiRegistroModel());
 
-    // On page load action.
-    SchedulerBinding.instance.addPostFrameCallback((_) async {
-      _model.aceptaceToken2 = await actions.getAcceptanceToken(
-        FFDevEnvironmentValues().publicKey,
-        FFDevEnvironmentValues().isProduction,
-      );
-    });
+    SchedulerBinding.instance.addPostFrameCallback((_) => _cargarTokens());
 
     _model.textController ??= TextEditingController();
+    _model.textController!.addListener(_actualizarTelefono);
     _model.textFieldFocusNode ??= FocusNode();
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
+  void _actualizarTelefono() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _cargarTokens() async {
+    if (!mounted) return;
+    setState(() {
+      _cargandoTokens = true;
+      _errorTokens = null;
+      _acceptanceToken = '';
+      _personalDataAuthToken = '';
+    });
+    try {
+      final respuesta = await actions
+          .getAcceptanceToken(
+            FFDevEnvironmentValues().publicKey,
+            FFDevEnvironmentValues().isProduction,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+      String leerToken(String campo) {
+        final valor = respuesta is Map ? respuesta[campo] : null;
+        if (valor is! String || valor.trim() == 'null') return '';
+        return valor.trim();
+      }
+
+      final aceptacion = leerToken('acceptanceToken');
+      final autorizacion = leerToken('personalDataAuthToken');
+      if (respuesta is! Map ||
+          respuesta['success'] != true ||
+          aceptacion.isEmpty ||
+          autorizacion.isEmpty) {
+        throw StateError('Tokens de aceptación no disponibles');
+      }
+      setState(() {
+        _acceptanceToken = aceptacion;
+        _personalDataAuthToken = autorizacion;
+        _cargandoTokens = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _cargandoTokens = false;
+        _errorTokens = 'No se pudo preparar la vinculación con Wompi. '
+            'Reintenta para continuar.';
+      });
+    }
   }
 
   @override
   void dispose() {
+    _model.textController?.removeListener(_actualizarTelefono);
     _model.dispose();
 
     super.dispose();
@@ -152,6 +199,7 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
                             autofocus: false,
                             enabled: true,
                             obscureText: false,
+                            keyboardType: TextInputType.phone,
                             decoration: InputDecoration(
                               isDense: true,
                               labelStyle: FlutterFlowTheme.of(context)
@@ -255,6 +303,18 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
                     ],
                   ),
                 ),
+                if (_cargandoTokens)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12.0),
+                    child: Text('Preparando vinculación...'),
+                  ),
+                if (_errorTokens != null) ...[
+                  Text(_errorTokens!),
+                  TextButton(
+                    onPressed: _cargarTokens,
+                    child: const Text('Reintentar'),
+                  ),
+                ],
                 // 48 de alto, como el resto de botones de la app. Estaba en
                 // 80 y el botón salía desproporcionado.
                 Container(
@@ -263,15 +323,16 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
                   child: custom_widgets.NequiVerificationButton(
                     width: MediaQuery.sizeOf(context).width * 1.0,
                     height: 48.0,
-                    phoneNumber: _model.textController.text,
+                    phoneNumber: _model.textController.text.trim(),
+                    enabled: !_cargandoTokens &&
+                        _errorTokens == null &&
+                        _acceptanceToken.isNotEmpty &&
+                        _personalDataAuthToken.isNotEmpty,
                     publicKey: FFDevEnvironmentValues().publicKey,
                     privateKey: FFDevEnvironmentValues().privateKey,
                     customerEmail: currentUserEmail,
-                    acceptanceToken: getJsonField(
-                      _model.aceptaceToken2,
-                      r'''$.acceptanceToken''',
-                    ).toString(),
-                    acceptPersonalAuth: '1234',
+                    acceptanceToken: _acceptanceToken,
+                    acceptPersonalAuth: _personalDataAuthToken,
                     buttonText: 'Vincula',
                     buttonColor: FlutterFlowTheme.of(context).primary,
                     textColor: FlutterFlowTheme.of(context).secondaryBackground,
@@ -287,7 +348,7 @@ class _NequiRegistroWidgetState extends State<NequiRegistroWidget> {
                           'admin@hulp.com',
                         ),
                         'tipo_cuenta': 'NEQUI',
-                        'numero_telefono': _model.textController.text,
+                        'numero_telefono': _model.textController.text.trim(),
                         'es_predeterminado': true,
                       });
                       if (!mounted) return;

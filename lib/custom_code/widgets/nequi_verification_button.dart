@@ -37,6 +37,7 @@ class NequiVerificationButton extends StatefulWidget {
     this.buttonText = 'Vincular Nequi',
     this.buttonColor,
     this.textColor,
+    this.enabled = true,
   }) : super(key: key);
 
   final double? width;
@@ -52,6 +53,7 @@ class NequiVerificationButton extends StatefulWidget {
   final String buttonText;
   final Color? buttonColor;
   final Color? textColor;
+  final bool enabled;
 
   @override
   _NequiVerificationButtonState createState() =>
@@ -65,32 +67,18 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
   int _pollingAttempts = 0;
   static const int _maxPollingAttempts = 60;
 
-  // Variable para guardar el número anterior y detectar cambios
-  String _previousPhoneNumber = '';
+  String _telefonoEnProceso = '';
+
+  bool get _puedeVincular =>
+      widget.enabled &&
+      widget.acceptanceToken.trim().isNotEmpty &&
+      widget.acceptanceToken.trim() != 'null' &&
+      widget.acceptPersonalAuth.trim().isNotEmpty &&
+      widget.acceptPersonalAuth.trim() != 'null';
 
   static String get baseUrl => FFDevEnvironmentValues().isProduction
       ? 'https://production.wompi.co/v1'
       : 'https://sandbox.wompi.co/v1';
-
-  @override
-  void initState() {
-    super.initState();
-    _previousPhoneNumber = widget.phoneNumber;
-    print('Número inicial: ${widget.phoneNumber}');
-  }
-
-  @override
-  void didUpdateWidget(NequiVerificationButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    // Detectar si el número cambió
-    if (oldWidget.phoneNumber != widget.phoneNumber) {
-      setState(() {
-        _previousPhoneNumber = widget.phoneNumber;
-      });
-      print('Número actualizado: ${widget.phoneNumber}');
-    }
-  }
 
   @override
   void dispose() {
@@ -99,13 +87,16 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
   }
 
   Future<void> _handleNequiFlow() async {
+    if (_isLoading || !_puedeVincular) return;
+    final telefono = widget.phoneNumber.trim();
     // Validar que haya un número de teléfono
-    if (widget.phoneNumber.isEmpty) {
+    if (telefono.isEmpty) {
       _showErrorSnackbar('Por favor ingresa un número de teléfono');
       return;
     }
 
     setState(() {
+      _telefonoEnProceso = telefono;
       _isLoading = true;
       _statusMessage = 'Iniciando tokenización...';
       _pollingAttempts = 0;
@@ -142,8 +133,6 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
 
   Future<String?> _tokenizeNequi() async {
     try {
-      print('Tokenizando con número: ${widget.phoneNumber}');
-
       final response = await http.post(
         Uri.parse('$baseUrl/tokens/nequi'),
         headers: {
@@ -151,7 +140,7 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
           'Content-Type': 'application/json',
         },
         body: json.encode({
-          'phone_number': widget.phoneNumber,
+          'phone_number': _telefonoEnProceso,
         }),
       );
 
@@ -533,7 +522,7 @@ class _NequiVerificationButtonState extends State<NequiVerificationButton> {
   @override
   Widget build(BuildContext context) {
     return FFButtonWidget(
-      onPressed: _isLoading ? null : _handleNequiFlow,
+      onPressed: _isLoading || !_puedeVincular ? null : _handleNequiFlow,
       text: widget.buttonText,
       icon: Icon(
         Icons.phone_android,

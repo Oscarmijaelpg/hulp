@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 class NequiRegistroModel extends FlutterFlowModel<NequiRegistroWidget> {
   ///  State fields for stateful widgets in this page.
 
-  // Stores action output result for [Custom Action - getAcceptanceToken] action in NequiRegistro widget.
-  dynamic aceptaceToken2;
   // State field(s) for TextField widget.
   FocusNode? textFieldFocusNode;
   TextEditingController? textController;
