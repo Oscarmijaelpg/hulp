@@ -39,6 +39,13 @@ class ReciboWidget extends StatefulWidget {
 
 class _ReciboWidgetState extends State<ReciboWidget> {
   late ReciboModel _model;
+  bool _mostrarErrorMonto = false;
+
+  double get _totalRecibo =>
+      _model.items.fold<double>(0.0, (suma, item) => suma + item.total);
+
+  bool get _montoValido =>
+      _totalRecibo.isFinite && (_totalRecibo * 100).round() >= 150000;
 
   @override
   void setState(VoidCallback callback) {
@@ -682,6 +689,19 @@ class _ReciboWidgetState extends State<ReciboWidget> {
                         ),
                       ),
                     ),
+                    if (_mostrarErrorMonto && !_montoValido)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            'El mínimo para enviar es \$1.500 COP.',
+                            style: TextStyle(
+                              color: FlutterFlowTheme.of(context).error,
+                            ),
+                          ),
+                        ),
+                      ),
                     Builder(
                       builder: (context) => Padding(
                         padding: EdgeInsetsDirectional.fromSTEB(
@@ -694,22 +714,16 @@ class _ReciboWidgetState extends State<ReciboWidget> {
                               return;
                             }
                             if (_model.items.length > 0) {
+                              final total = _totalRecibo;
+                              if (!_montoValido) {
+                                safeSetState(() => _mostrarErrorMonto = true);
+                                return;
+                              }
                               _model.reciboid = await RecibosTable().insert({
                                 'solicitud_id': widget!.solicitudiD,
                                 'proveedor_id': currentUserUid,
                                 'titulo': _model.textController.text,
-                                'total': valueOrDefault<double>(
-                                  (List<double> totales) {
-                                    return totales.reduce(
-                                        (a, b) => (a ?? 0.0) + (b ?? 0.0));
-                                  }(_model.items
-                                      .map((e) => valueOrDefault<double>(
-                                            e.total,
-                                            0.0,
-                                          ))
-                                      .toList()),
-                                  0.0,
-                                ),
+                                'total': total,
                                 'estado': 'pendiente',
                               });
                               _shouldSetState = true;
