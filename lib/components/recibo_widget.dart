@@ -451,6 +451,19 @@ class _ReciboWidgetState extends State<ReciboWidget> {
                           onPressed: (widget.recibo?.estado == 'aceptado')
                               ? null
                               : () async {
+                                  final total = widget.recibo?.total;
+                                  if (total == null || !total.isFinite ||
+                                      (total * 100).round() < 150000) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'El monto mínimo para pagar con Wompi es de \$1.500 COP, sin incluir impuestos.',
+                                        ),
+                                        duration: Duration(seconds: 5),
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   var _shouldSetState = false;
                                   _model.tarjeta1 =
                                       await TarjetasGuardadasTable().queryRows(
