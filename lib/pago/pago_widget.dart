@@ -709,6 +709,11 @@ class _PagoWidgetState extends State<PagoWidget> {
                             ).toString(),
                             currentUserEmail,
                             FFDevEnvironmentValues().isProduction,
+                            personalDataAuthToken: getJsonField(
+                                  _model.acceptanceResult,
+                                  r'''$.personalDataAuthToken''',
+                                )?.toString() ??
+                                '',
                           );
                           _shouldSetState = true;
                           if (getJsonField(
@@ -747,11 +752,11 @@ class _PagoWidgetState extends State<PagoWidget> {
                             // servicio, la pantalla anterior aparece de golpe y
                             // sin esto no queda claro si la tarjeta se guardo.
                             await _avisarTarjetaGuardada(
-                              getJsonField(_model.tokenizeResult,
-                                      r'''$.brand''')
+                              getJsonField(
+                                      _model.tokenizeResult, r'''$.brand''')
                                   .toString(),
-                              getJsonField(_model.tokenizeResult,
-                                      r'''$.lastFour''')
+                              getJsonField(
+                                      _model.tokenizeResult, r'''$.lastFour''')
                                   .toString(),
                             );
                             if (mounted) {
@@ -876,7 +881,8 @@ class _PagoWidgetState extends State<PagoWidget> {
   /// Se muestra sobre la pantalla de pago y se cierra sola al pulsar; recien
   /// entonces se vuelve a donde estaba el usuario (el agendamiento, si venia
   /// de ahi), para que el aviso no se pierda en la transicion.
-  Future<void> _avisarTarjetaGuardada(String marca, String ultimosCuatro) async {
+  Future<void> _avisarTarjetaGuardada(
+      String marca, String ultimosCuatro) async {
     if (!mounted) return;
     final tema = FlutterFlowTheme.of(context);
     final detalle = [
@@ -955,5 +961,4 @@ class _PagoWidgetState extends State<PagoWidget> {
       ),
     );
   }
-
 }

@@ -23,8 +23,9 @@ Future<dynamic> createPaymentSource(
   String cardToken,
   String acceptanceToken,
   String customerEmail,
-  bool isProduction,
-) async {
+  bool isProduction, {
+  required String personalDataAuthToken,
+}) async {
   try {
     if (cardToken.trim().isEmpty) {
       return {
@@ -40,12 +41,20 @@ Future<dynamic> createPaymentSource(
         'field': 'acceptanceToken'
       };
     }
+    if (personalDataAuthToken.trim().isEmpty) {
+      return {
+        'success': false,
+        'error': 'Token de autorizacion de datos personales requerido',
+        'field': 'personalDataAuthToken'
+      };
+    }
 
     return await llamarWompi({
       'accion': 'registrar_metodo_pago',
       'tipo': 'CARD',
       'token': cardToken.trim(),
       'acceptance_token': acceptanceToken.trim(),
+      'accept_personal_auth': personalDataAuthToken.trim(),
       if (customerEmail.trim().isNotEmpty)
         'customer_email': customerEmail.trim(),
     });

@@ -138,8 +138,8 @@ ResultadoUbicacion analizarUbicacion(String? entrada) {
 /// que acaba leyendo el proveedor en su telefono.
 ///
 /// Se conserva la PRIMERA aparicion de cada tramo, que mantiene el orden de lo
-/// concreto a lo general. No se toca nada mas: no es un normalizador de
-/// direcciones, solo quita duplicados exactos.
+/// concreto a lo general. El país se excluye al construir la dirección desde
+/// los componentes de Google; aquí solo se eliminan duplicados exactos.
 String limpiarDireccion(String direccion) {
   final vistos = <String>{};
   final tramos = <String>[];

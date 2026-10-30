@@ -5,6 +5,51 @@ import 'package:http/http.dart' as http;
 
 import 'ubicacion_helpers.dart';
 
+/// Construye la dirección con los componentes de Places y Geocoding.
+/// Excluye country y repeticiones administrativas; conserva ciudad y nombres.
+String? direccionDesdeComponentesGoogle(dynamic componentes) {
+  if (componentes is! List || componentes.isEmpty) return null;
+  final partes = <({String texto, Set<String> tipos})>[];
+
+  for (final componente in componentes) {
+    if (componente is! Map) return null;
+    final texto = componente['longText'] ?? componente['long_name'];
+    final tipos = componente['types'];
+    if (texto is! String || texto.trim().isEmpty || tipos is! List) return null;
+    final tiposParte = tipos.whereType<String>().toSet();
+    if (tiposParte.isEmpty) return null;
+    partes.add((texto: texto.trim(), tipos: tiposParte));
+  }
+
+  final administracionesVistas = <String>{};
+  final conservadas = partes.where((parte) {
+    if (parte.tipos.contains('country')) return false;
+    final esAdministrativa = parte.tipos.any((tipo) =>
+        tipo == 'locality' ||
+        tipo == 'postal_town' ||
+        tipo.startsWith('administrative_area_level_'));
+    if (!esAdministrativa) return true;
+    final nombre = parte.texto.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    return administracionesVistas.add(nombre);
+  }).toList();
+  if (conservadas.isEmpty) return null;
+
+  final calle = conservadas.indexWhere((p) => p.tipos.contains('route'));
+  final numero =
+      conservadas.indexWhere((p) => p.tipos.contains('street_number'));
+  final textos = <String>[];
+  for (var i = 0; i < conservadas.length; i++) {
+    if (calle >= 0 && numero >= 0 && (i == calle || i == numero)) {
+      if (i == min(calle, numero)) {
+        textos.add('${conservadas[calle].texto} ${conservadas[numero].texto}');
+      }
+    } else {
+      textos.add(conservadas[i].texto);
+    }
+  }
+  return textos.join(', ');
+}
+
 /// Búsqueda de direcciones y geocodificación inversa contra las APIs de Google.
 ///
 /// Todo por REST desde Dart, sin interoperabilidad: tanto Places (New) como
@@ -55,12 +100,12 @@ class LugarResuelto {
 ///      dejar la dirección vacía.
 ///
 /// Público para poder probarlo: es la clase de lógica que se rompe en silencio.
-String? elegirMejorDireccion(List<dynamic> resultados) {
+Map<String, dynamic>? elegirMejorResultado(List<dynamic> resultados) {
   const conPortal = {'street_address', 'premise', 'subpremise'};
 
   String? texto(dynamic r) {
     final mapa = r as Map<String, dynamic>?;
-    final valor = mapa?['formatted_address'] as String?;
+    final valor = direccionDesdeComponentesGoogle(mapa?['address_components']);
     return (valor == null || valor.isEmpty) ? null : valor;
   }
 
@@ -73,19 +118,25 @@ String? elegirMejorDireccion(List<dynamic> resultados) {
   for (final r in resultados) {
     if (tipos(r).intersection(conPortal).isNotEmpty) {
       final t = texto(r);
-      if (t != null) return limpiarDireccion(t);
+      if (t != null) return Map<String, dynamic>.from(r as Map);
     }
   }
   for (final r in resultados) {
     if (tipos(r).contains('plus_code')) continue;
     final t = texto(r);
-    if (t != null) return limpiarDireccion(t);
+    if (t != null) return Map<String, dynamic>.from(r as Map);
   }
   for (final r in resultados) {
     final t = texto(r);
-    if (t != null) return limpiarDireccion(t);
+    if (t != null) return Map<String, dynamic>.from(r as Map);
   }
   return null;
+}
+
+/// Conserva el acceso al texto para consumidores de la selección de resultados.
+String? elegirMejorDireccion(List<dynamic> resultados) {
+  final resultado = elegirMejorResultado(resultados);
+  return direccionDesdeComponentesGoogle(resultado?['address_components']);
 }
 
 /// Una direccion resuelta desde un punto, con la ciudad que le corresponde.
@@ -172,15 +223,13 @@ class PlacesService {
           .whereType<Map<String, dynamic>>()
           .map((p) {
             final formato = p['structuredFormat'] as Map<String, dynamic>?;
-            final principal =
-                (formato?['mainText'] as Map<String, dynamic>?)?['text']
-                        as String? ??
-                    (p['text'] as Map<String, dynamic>?)?['text'] as String? ??
-                    '';
-            final secundario =
-                (formato?['secondaryText'] as Map<String, dynamic>?)?['text']
-                        as String? ??
-                    '';
+            final principal = (formato?['mainText']
+                    as Map<String, dynamic>?)?['text'] as String? ??
+                (p['text'] as Map<String, dynamic>?)?['text'] as String? ??
+                '';
+            final secundario = (formato?['secondaryText']
+                    as Map<String, dynamic>?)?['text'] as String? ??
+                '';
             return SugerenciaLugar(
               placeId: p['placeId'] as String? ?? '',
               principal: principal,
@@ -201,32 +250,32 @@ class PlacesService {
     if (claveApi.isEmpty || placeId.isEmpty) return null;
     try {
       final respuesta = await http.get(
-        Uri.parse('https://places.googleapis.com/v1/places/$placeId'
-            '?languageCode=es&sessionToken=$_sesion'),
+        Uri.https('places.googleapis.com', '/v1/places/$placeId', {
+          'languageCode': 'es',
+          'sessionToken': _sesion,
+        }),
         headers: {
           'X-Goog-Api-Key': claveApi,
-          'X-Goog-FieldMask': 'location,formattedAddress',
+          'X-Goog-FieldMask': 'location,addressComponents',
         },
       );
-      // La sesión se cierra con el detalle, pase lo que pase: reutilizarla
-      // después de cobrarla es lo que dispara la factura por pulsación.
-      _sesion = _nuevaSesion();
       if (respuesta.statusCode != 200) return null;
-
       final cuerpo =
           jsonDecode(utf8.decode(respuesta.bodyBytes)) as Map<String, dynamic>;
       final punto = cuerpo['location'] as Map<String, dynamic>?;
       final lat = (punto?['latitude'] as num?)?.toDouble();
       final lng = (punto?['longitude'] as num?)?.toDouble();
-      if (lat == null || lng == null) return null;
-
+      final direccion =
+          direccionDesdeComponentesGoogle(cuerpo['addressComponents']);
+      if (lat == null || lng == null || direccion == null) return null;
       return LugarResuelto(
         coordenadas: Coordenadas(lat, lng),
-        direccion:
-            limpiarDireccion(cuerpo['formattedAddress'] as String? ?? ''),
+        direccion: direccion,
       );
     } catch (_) {
       return null;
+    } finally {
+      _sesion = _nuevaSesion();
     }
   }
 
@@ -255,9 +304,9 @@ class PlacesService {
       String? ciudad;
       for (final tipo in const ['locality', 'administrative_area_level_2']) {
         for (final r in resultados) {
-          final comps = ((r as Map<String, dynamic>)['address_components']
-              as List?) ??
-              const [];
+          final comps =
+              ((r as Map<String, dynamic>)['address_components'] as List?) ??
+                  const [];
           for (final c in comps) {
             final mapa = c as Map<String, dynamic>;
             final tipos = (mapa['types'] as List?)?.whereType<String>() ??
@@ -283,21 +332,6 @@ class PlacesService {
   /// Devuelve null si no hay resultado; quien llame debe dejar la dirección
   /// como esté, nunca vaciarla.
   Future<String?> direccionDe(double latitud, double longitud) async {
-    if (claveApi.isEmpty) return null;
-    try {
-      final respuesta = await http.get(Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?latlng=$latitud,$longitud&language=es&key=$claveApi',
-      ));
-      if (respuesta.statusCode != 200) return null;
-
-      final cuerpo =
-          jsonDecode(utf8.decode(respuesta.bodyBytes)) as Map<String, dynamic>;
-      if (cuerpo['status'] != 'OK') return null;
-
-      return elegirMejorDireccion((cuerpo['results'] as List?) ?? const []);
-    } catch (_) {
-      return null;
-    }
+    return (await ubicacionDe(latitud, longitud))?.direccion;
   }
 }

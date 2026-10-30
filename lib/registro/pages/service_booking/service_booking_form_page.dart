@@ -219,10 +219,12 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
       final direccion = _addressCtrl.text.trim();
       final complemento = _complementoCtrl.text.trim();
       final nombreCiudad = _selectedCiudad!.nombre;
+      final direccionConComplemento = complemento.isEmpty
+          ? direccion
+          : '$direccion,\n$complemento';
       final ubicacionParts = [
         nombreCiudad,
-        if (direccion.isNotEmpty) direccion,
-        if (complemento.isNotEmpty) complemento,
+        if (direccionConComplemento.isNotEmpty) direccionConComplemento,
       ];
       final ubicacion = ubicacionParts.join('\n');
 
