@@ -343,6 +343,11 @@ class _AceptarServicioWidgetState extends State<AceptarServicioWidget> {
                               _model.validacion!.firstOrNull!.id,
                               FFDevEnvironmentValues().integrityKey,
                               true,
+                              personalDataAuthToken: getJsonField(
+                                    _model.aceptaceToken,
+                                    r'''$.personalDataAuthToken''',
+                                  )?.toString() ??
+                                  '',
                             );
                             _shouldSetState = true;
                             ScaffoldMessenger.of(context).showSnackBar(

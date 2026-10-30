@@ -1729,12 +1729,12 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                         ),
                                                                                       ),
                                                                                     ),
-                                                                                    Row(
-                                                                                      mainAxisSize: MainAxisSize.max,
-                                                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                                    Column(
+                                                                                      crossAxisAlignment: CrossAxisAlignment.stretch,
                                                                                       children: [
                                                                                         Row(
                                                                                           mainAxisSize: MainAxisSize.max,
+                                                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                                                           children: [
                                                                                             FutureBuilder<List<ChatsSolicitudRow>>(
                                                                                               future: ChatsSolicitudTable().querySingleRow(
@@ -2038,13 +2038,10 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                               ),
                                                                                           ].divide(SizedBox(width: 8.0)),
                                                                                         ),
-                                                                                        Flexible(
-                                                                                          child: Row(
-                                                                                            mainAxisSize: MainAxisSize.max,
-                                                                                            mainAxisAlignment: MainAxisAlignment.end,
-                                                                                            children: [
-                                                                                              Flexible(
-                                                                                                child: Builder(
+                                                                                        SizedBox(height: 8.0),
+                                                                                        SizedBox(
+                                                                                          width: double.infinity,
+                                                                                          child: Builder(
                                                                                                   builder: (context) => FFButtonWidget(
                                                                                                     onPressed: () async {
                                                                                                       if (solicitudesAceptadasxItem.estado == 'aceptadas') {
@@ -2135,8 +2132,10 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       size: 16.0,
                                                                                                     ),
                                                                                                     options: FFButtonOptions(
-                                                                                                      height: 32.0,
-                                                                                                      padding: EdgeInsetsDirectional.fromSTEB(16.0, 0.0, 16.0, 0.0),
+                                                                                                      height: 48.0,
+                                                                                                      padding: EdgeInsetsDirectional.fromSTEB(12.0, 0.0, 12.0, 0.0),
+                                                                                                      textAlign: TextAlign.center,
+                                                                                                      maxLines: 2,
                                                                                                       iconAlignment: IconAlignment.end,
                                                                                                       iconPadding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
                                                                                                       iconColor: FlutterFlowTheme.of(context).success,
@@ -2160,12 +2159,9 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       borderRadius: BorderRadius.circular(8.0),
                                                                                                     ),
                                                                                                   ),
-                                                                                                ),
-                                                                                              ),
-                                                                                            ].divide(SizedBox(width: 4.0)),
-                                                                                          ),
                                                                                         ),
-                                                                                      ].divide(SizedBox(width: 8.0)),
+                                                                                        ),
+                                                                                      ],
                                                                                     ),
                                                                                   ],
                                                                                 ),

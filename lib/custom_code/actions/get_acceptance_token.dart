@@ -26,9 +26,9 @@ Future<dynamic> getAcceptanceToken(
 
     // Hacer la petición GET para obtener información del merchant
     final response = await http.get(
-      Uri.parse('$baseUrl/merchants/$publicKey'),
+      Uri.parse('$baseUrl/merchants/info'),
       headers: {
-        'Authorization': 'Bearer $publicKey',
+        'x-merchant-public-key': publicKey,
         'Content-Type': 'application/json',
       },
     );
@@ -38,11 +38,26 @@ Future<dynamic> getAcceptanceToken(
 
     // Verificar si la petición fue exitosa
     if (response.statusCode == 200) {
+      final acceptanceToken =
+          responseData['data']['presigned_acceptance']['acceptance_token'];
+      final personalDataAuthToken = responseData['data']
+          ['presigned_personal_data_auth']['acceptance_token'];
+      if (acceptanceToken is! String ||
+          acceptanceToken.trim().isEmpty ||
+          personalDataAuthToken is! String ||
+          personalDataAuthToken.trim().isEmpty) {
+        return {
+          'success': false,
+          'error': 'Wompi no devolvió ambos tokens de aceptación',
+          'statusCode': response.statusCode,
+        };
+      }
+
       return {
         'success': true,
-        'acceptanceToken': responseData['data']['presigned_acceptance']
-            ['acceptance_token'],
+        'acceptanceToken': acceptanceToken,
         'permalink': responseData['data']['presigned_acceptance']['permalink'],
+        'personalDataAuthToken': personalDataAuthToken,
         'message': 'Token de aceptación obtenido exitosamente'
       };
     } else {

@@ -19,10 +19,10 @@
 //   registrar_metodo_pago BANCOLOMBIA_TRANSFER bancolombia_verification_widget.dart
 //                                              y api_calls.dart
 //
-// NO cubre, y es a proposito: consultar el estado de una transaccion,
-// get_acceptance_token, tokenize_card y los endpoints /tokens/*. Todos usan la
-// clave PUBLICA, que esta pensada para viajar en el cliente. Moverlos no
-// aportaria nada.
+// Tambien cubre consultar_transaccion: consulta el estado con la clave privada
+// desde el servidor, despues de autenticar y autorizar al usuario.
+// get_acceptance_token, tokenize_card y los endpoints /tokens/* permanecen en
+// el cliente porque usan la clave PUBLICA.
 //
 // Desplegar (desde la raiz del repo de talento):
 //   supabase functions deploy wompi --project-ref <ref>
@@ -44,6 +44,8 @@ import {
   centavosDeLaSolicitud,
   centavosDeRecibo,
 } from './firma.ts';
+import { consultarTransaccion } from './consultar_transaccion.ts';
+import { obtenerTokensAceptacion } from './obtener_tokens_aceptacion.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -218,14 +220,47 @@ Deno.serve(async (req) => {
     const cuerpo = await req.json().catch(() => ({}));
     const accion = cuerpo.accion;
 
+    if (accion === 'obtener_tokens_aceptacion') {
+      return await obtenerTokensAceptacion({
+        baseWompi: BASE_WOMPI,
+        clavePublica: Deno.env.get('WOMPI_PUBLIC_KEY') ?? '',
+        responder,
+        error,
+      });
+    }
+
+    if (accion === 'consultar_transaccion') {
+      return await consultarTransaccion(cuerpo, {
+        admin,
+        usuarioId: user.id,
+        baseWompi: BASE_WOMPI,
+        cabeceraWompi,
+        responder,
+        error,
+      });
+    }
+
     // ------------------------------------------------------------------
     // Las dos acciones de cobro comparten toda la validacion: cargar la
     // solicitud, ver quien pide el cobro y cuanto vale de verdad.
     // ------------------------------------------------------------------
     if (accion === 'crear_cobro' || accion === 'crear_cobro_bancolombia') {
-      const { recibo_id, acceptance_token } = cuerpo;
+      const { recibo_id, acceptance_token, accept_personal_auth } = cuerpo;
       let { solicitud_id } = cuerpo;
-      if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+      if (accion === 'crear_cobro') {
+        if (typeof acceptance_token !== 'string' || !acceptance_token.trim()) {
+          return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+        }
+        if (typeof accept_personal_auth !== 'string' || !accept_personal_auth.trim()) {
+          return error('Falta accept_personal_auth', 400, { field: 'accept_personal_auth' });
+        }
+      } else if (!acceptance_token) {
+        return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+      }
+      const tokenAceptacion = String(acceptance_token).trim();
+      const tokenAutorizacionDatos = typeof accept_personal_auth === 'string'
+        ? accept_personal_auth.trim()
+        : '';
 
       // El cobro nace de un recibo o de una solicitud. Desde la app de
       // Usuarios se paga un recibo; desde el admin y talento, la solicitud.
@@ -290,6 +325,7 @@ Deno.serve(async (req) => {
       };
 
       const autorizado = quien?.rol === 'admin'
+        || quien?.rol === 'administrador'
         || user.id === solicitud.usuario_id
         || user.id === solicitud.profesional_id;
       if (!autorizado) {
@@ -397,7 +433,8 @@ Deno.serve(async (req) => {
           payment_method: { installments: 1 },
           reference: referencia,
           payment_source_id: Number(paymentSourceId),
-          acceptance_token: String(acceptance_token).trim(),
+          acceptance_token: tokenAceptacion,
+          accept_personal_auth: tokenAutorizacionDatos,
           signature: firma,
         }),
       });
@@ -420,7 +457,7 @@ Deno.serve(async (req) => {
       });
 
       // Misma forma que devolvia createTransaction, para que el cliente siga
-      // haciendo su polling con la clave publica sin cambiar nada mas.
+      // haciendo su polling mediante la accion consultar_transaccion.
       return responder({
         success: true,
         transactionId: t.id,
@@ -446,13 +483,20 @@ Deno.serve(async (req) => {
     // El token siempre lo genera el cliente con la clave PUBLICA.
     // ------------------------------------------------------------------
     if (accion === 'registrar_metodo_pago') {
-      const { tipo, token, acceptance_token } = cuerpo;
+      const { tipo, token, acceptance_token, accept_personal_auth } = cuerpo;
       if (!tipo) return error('Falta tipo', 400, { field: 'tipo' });
       if (!TIPOS_VALIDOS.includes(tipo as TipoMetodo)) {
         return error(`Tipo no soportado: ${tipo}`, 400, { field: 'tipo', validos: TIPOS_VALIDOS });
       }
       if (!token) return error('Falta token', 400, { field: 'token' });
       if (!acceptance_token) return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+      if (tipo === 'CARD' && (typeof acceptance_token !== 'string' || !acceptance_token.trim())) {
+        return error('Falta acceptance_token', 400, { field: 'acceptance_token' });
+      }
+      if (tipo === 'CARD' &&
+          (typeof accept_personal_auth !== 'string' || !accept_personal_auth.trim())) {
+        return error('Falta accept_personal_auth', 400, { field: 'accept_personal_auth' });
+      }
 
       // El metodo se registra siempre a nombre de QUIEN LLAMA: el usuario_id
       // no se acepta del cliente, asi que nadie registra medios de pago en
@@ -475,8 +519,9 @@ Deno.serve(async (req) => {
         customer_email: correo,
         acceptance_token: String(acceptance_token).trim(),
       };
-      // CARD es el unico que no lleva autorizacion de datos personales.
-      if (tipo !== 'CARD') {
+      if (tipo === 'CARD') {
+        payload.accept_personal_auth = accept_personal_auth.trim();
+      } else {
         payload.accept_personal_auth = cuerpo.accept_personal_auth ?? '';
       }
       if (tipo === 'BANCOLOMBIA_TRANSFER') {

@@ -1,17 +1,12 @@
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/api_requests/api_calls.dart';
 import '/backend/supabase/supabase.dart';
-import '/components/servicio_asignado_error_widget.dart';
-import '/components/servicio_asignado_widget.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
 import '/flutter_flow/flutter_flow_widgets.dart';
-import 'dart:ui';
 import '/custom_code/actions/index.dart' as actions;
-import '/flutter_flow/custom_functions.dart' as functions;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'finalizar_servicio_model.dart';
 export 'finalizar_servicio_model.dart';
 
@@ -30,6 +25,165 @@ class FinalizarServicioWidget extends StatefulWidget {
 
 class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
   late FinalizarServicioModel _model;
+
+  bool _finalizando = false;
+
+  void _avisar(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  Future<void> _finalizarServicio() async {
+    if (_finalizando) return;
+    if (widget.idservicio == null || widget.idservicio!.isEmpty) {
+      _avisar('No se encontró la solicitud.');
+      return;
+    }
+    setState(() => _finalizando = true);
+    try {
+      final solicitudes = await SolicitudesServicioTable().queryRows(
+        queryFn: (q) => q.eqOrNull('id', widget.idservicio),
+      );
+      final solicitud = solicitudes.firstOrNull;
+      if (solicitud == null || solicitud.profesionalId != currentUserUid) {
+        _avisar('La solicitud no existe o ya no está asignada a ti.');
+        return;
+      }
+      final finalizadas = await SolicitudesServicioTable().update(
+        data: {'estado': 'finalizadas'},
+        matchingRows: (rows) => rows
+            .eqOrNull('id', solicitud.id)
+            .eqOrNull('profesional_id', currentUserUid),
+        returnRows: true,
+      );
+      if (finalizadas.isEmpty) {
+        _avisar('La solicitud ya no está asignada a ti. No se realizó un cobro.');
+        return;
+      }
+      final resultado = await _cobrarAlFinalizar(solicitud);
+      try {
+        await SendNotificationUserHulpCall.call(
+          userIdSupabase: solicitud.usuarioId,
+          title: 'Tu solicitud ha sido finalizada',
+          message: 'Haz click aqui',
+        );
+      } catch (_) {
+        // La notificación no revierte la finalización ni el pago.
+      }
+      if (!mounted) return;
+      _avisar(resultado.isEmpty
+          ? 'Servicio finalizado.'
+          : 'Servicio finalizado. $resultado');
+      Navigator.pop(context);
+    } catch (e) {
+      _avisar('No se pudo finalizar el servicio: $e');
+    } finally {
+      if (mounted) setState(() => _finalizando = false);
+    }
+  }
+
+  String _mensajeErrorPago(dynamic respuesta, String alternativa) {
+    if (respuesta is! Map) return alternativa;
+    for (final valor in [
+      respuesta['error'],
+      respuesta['statusMessage'],
+      respuesta['message']
+    ]) {
+      if (valor is String && valor.trim().isNotEmpty) return valor.trim();
+    }
+    return alternativa;
+  }
+
+  Future<String> _cobrarAlFinalizar(SolicitudesServicioRow solicitud) async {
+    // Una solicitud pagada solo necesita el cierre operativo.
+    if (solicitud.estadoPago == 'pagado') {
+      return '';
+    }
+
+    var aprobado = false;
+    try {
+      final metodos = await MetodosPagoTable().queryRows(
+        queryFn: (q) => q
+            .eqOrNull('usuario_id', solicitud.usuarioId)
+            .eqOrNull('es_predeterminado', true),
+      );
+      int fuente;
+      String metodo;
+      if (metodos.isNotEmpty) {
+        fuente = metodos.first.paymentSourceId;
+        metodo = metodos.first.tipo;
+      } else {
+        final tarjetas = await TarjetasGuardadasTable().queryRows(
+          queryFn: (q) => q.eqOrNull('usuario_id', solicitud.usuarioId),
+        );
+        if (tarjetas.isEmpty) {
+          return 'No se realizó un cobro: el cliente no tiene método de pago. '
+              'Se conservó el estado del pago.';
+        }
+        fuente = int.tryParse(tarjetas.first.paymentSourceId) ?? 0;
+        metodo = 'CARD';
+      }
+      if (fuente <= 0) {
+        return 'No se realizó un cobro: el método de pago no es válido. '
+            'Se conservó el estado del pago.';
+      }
+      final tokens = await actions.getAcceptanceToken(
+        FFDevEnvironmentValues().publicKey,
+        FFDevEnvironmentValues().isProduction,
+      );
+      if (tokens is! Map || tokens['success'] != true) {
+        return 'Pago sin confirmar. ${_mensajeErrorPago(tokens, 'No se pudieron obtener los tokens de pago.')}';
+      }
+      final pago = await actions.createTransaction(
+        FFDevEnvironmentValues().privateKey,
+        FFDevEnvironmentValues().publicKey,
+        fuente,
+        tokens['acceptanceToken']?.toString() ?? '',
+        (((solicitud.precioBase ?? solicitud.precio) +
+                    (solicitud.precioAdicionales ?? 0)) *
+                100)
+            .round(),
+        'COP',
+        '', // El backend obtiene el correo del cliente.
+        '${solicitud.id}-${DateTime.now().millisecondsSinceEpoch}',
+        FFDevEnvironmentValues().integrityKey,
+        FFDevEnvironmentValues().isProduction,
+        personalDataAuthToken:
+            tokens['personalDataAuthToken']?.toString() ?? '',
+      );
+      if (pago is! Map ||
+          pago['success'] != true ||
+          pago['status'] != 'APPROVED') {
+        return 'Pago sin confirmar. ${_mensajeErrorPago(pago, 'El cobro no fue aprobado.')}';
+      }
+      aprobado = true;
+      await TransaccionesTable().insert({
+        'solicitud_id': solicitud.id,
+        'usuario_id': solicitud.usuarioId,
+        'monto': (pago['amount'] as num) / 100,
+        'moneda': 'COP',
+        'proveedor_pago': 'WOMPI',
+        'metodo_pago': metodo,
+        'numero_transaccion': pago['transactionId']?.toString(),
+        'referencia_externa': pago['reference']?.toString(),
+        'datos_pago': pago['fullData'],
+        'fecha_pago': supaSerialize<DateTime>(getCurrentTimestamp),
+        'fecha_registro': supaSerialize<DateTime>(getCurrentTimestamp),
+      });
+      await SolicitudesServicioTable().update(
+        data: {'estado_pago': 'pagado'},
+        matchingRows: (rows) => rows.eqOrNull('id', solicitud.id),
+      );
+      return 'Pago aprobado y registrado.';
+    } catch (e) {
+      if (aprobado) {
+        return 'Wompi aprobó el cobro, pero no se pudo completar su registro: $e. '
+            'Verifica el pago antes de intentar otro cobro.';
+      }
+      return 'Pago sin confirmar: $e';
+    }
+  }
 
   @override
   void setState(VoidCallback callback) {
@@ -181,598 +335,7 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
                     padding:
                         EdgeInsetsDirectional.fromSTEB(0.0, 24.0, 0.0, 0.0),
                     child: FFButtonWidget(
-                      onPressed: () async {
-                        var _shouldSetState = false;
-                        _model.validacion =
-                            await SolicitudesServicioTable().queryRows(
-                          queryFn: (q) => q.eqOrNull(
-                            'id',
-                            widget!.idservicio,
-                          ),
-                        );
-                        _shouldSetState = true;
-                        if ((_model.validacion?.firstOrNull?.profesionalId ==
-                                    null ||
-                                _model.validacion?.firstOrNull?.profesionalId ==
-                                    '') ||
-                            (_model.validacion?.firstOrNull?.profesionalId !=
-                                currentUserUid)) {
-                          await showDialog(
-                            context: context,
-                            builder: (dialogContext) {
-                              return Dialog(
-                                elevation: 0,
-                                insetPadding: EdgeInsets.zero,
-                                backgroundColor: Colors.transparent,
-                                alignment: AlignmentDirectional(0.0, 0.0)
-                                    .resolve(Directionality.of(context)),
-                                child: ServicioAsignadoErrorWidget(),
-                              );
-                            },
-                          );
-
-                          if (_shouldSetState) safeSetState(() {});
-                          return;
-                        } else {
-                          await SolicitudesServicioTable().update(
-                            data: {
-                              'profesional_id': currentUserUid,
-                            },
-                            matchingRows: (rows) => rows.eqOrNull(
-                              'id',
-                              widget!.idservicio,
-                            ),
-                          );
-                          _model.resultadosUsuarioMetodoPago =
-                              await MetodosPagoTable().queryRows(
-                            queryFn: (q) => q
-                                .eqOrNull(
-                                  'usuario_id',
-                                  _model.validacion?.firstOrNull?.usuarioId,
-                                )
-                                .eqOrNull(
-                                  'es_predeterminado',
-                                  true,
-                                ),
-                          );
-                          _shouldSetState = true;
-                          if (_model.resultadosUsuarioMetodoPago!.length > 0) {
-                            _model.usuarioServicio2 =
-                                await UsuariosTable().queryRows(
-                              queryFn: (q) => q.eqOrNull(
-                                'id',
-                                _model.validacion?.firstOrNull?.usuarioId,
-                              ),
-                            );
-                            _shouldSetState = true;
-                            _model.aceptaceToken2 =
-                                await actions.getAcceptanceToken(
-                              FFDevEnvironmentValues().publicKey,
-                              FFDevEnvironmentValues().isProduction,
-                            );
-                            _shouldSetState = true;
-                            if (getJsonField(
-                              _model.aceptaceToken2,
-                              r'''$.success''',
-                            )) {
-                              _model.pago3 = await actions.createTransaction(
-                                FFDevEnvironmentValues().privateKey,
-                                FFDevEnvironmentValues().publicKey,
-                                _model.resultadosUsuarioMetodoPago!.firstOrNull!
-                                    .paymentSourceId,
-                                getJsonField(
-                                  _model.aceptaceToken2,
-                                  r'''$.acceptanceToken''',
-                                ).toString(),
-                                ((valueOrDefault<double>(
-                                              _model.validacion?.firstOrNull
-                                                  ?.precioBase,
-                                              valueOrDefault<double>(
-                                                _model.validacion?.firstOrNull
-                                                    ?.precio,
-                                                0.0,
-                                              ),
-                                            ) +
-                                            valueOrDefault<double>(
-                                              _model.validacion?.firstOrNull
-                                                  ?.precioAdicionales,
-                                              0.0,
-                                            )) *
-                                        100)
-                                    .round(),
-                                'COP',
-                                _model.usuarioServicio2!.firstOrNull!
-                                    .correoElectronico!,
-                                '${_model.validacion!.firstOrNull!.id}-${DateTime.now().millisecondsSinceEpoch}',
-                                FFDevEnvironmentValues().integrityKey,
-                                FFDevEnvironmentValues().isProduction,
-                              );
-                              _shouldSetState = true;
-                              if (getJsonField(
-                                _model.pago3,
-                                r'''$.success''',
-                              )) {
-                                if ('APPROVED' ==
-                                    getJsonField(
-                                      _model.pago3,
-                                      r'''$.status''',
-                                    ).toString()) {
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'estado': 'finalizadas',
-                                      'profesional_id': currentUserUid,
-                                      'estado_pago': 'pagado',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '¡Servicio finalizado y pago aprobado!',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  await TransaccionesTable().insert({
-                                    // Lo que Wompi confirmo, no lo que calculo la app.
-                                    // Sin esto no hay forma de auditar un cobro.
-                                    'datos_pago': getJsonField(
-                                      _model.pago3,
-                                      r'''$.fullData''',
-                                    ),
-                                    'solicitud_id':
-                                        _model.validacion?.firstOrNull?.id,
-                                    'usuario_id': _model
-                                        .usuarioServicio2?.firstOrNull?.id,
-                                    'monto': valueOrDefault<double>(
-                                          _model.validacion?.firstOrNull
-                                              ?.precioBase,
-                                          valueOrDefault<double>(
-                                            _model.validacion?.firstOrNull
-                                                ?.precio,
-                                            0.0,
-                                          ),
-                                        ) +
-                                        valueOrDefault<double>(
-                                          _model.validacion?.firstOrNull
-                                              ?.precioAdicionales,
-                                          0.0,
-                                        ),
-                                    'moneda': 'COP',
-                                    'proveedor_pago': 'WOMPI',
-                                    'fecha_pago': supaSerialize<DateTime>(
-                                        getCurrentTimestamp),
-                                    'fecha_registro': supaSerialize<DateTime>(
-                                        getCurrentTimestamp),
-                                    'metodo_pago': _model
-                                            .resultadosUsuarioMetodoPago
-                                            ?.firstOrNull
-                                            ?.tipo ??
-                                        'Bancolombia',
-                                    'numero_transaccion': getJsonField(
-                                      _model.pago3,
-                                      r'''$.transactionId''',
-                                    )?.toString(),
-                                    'referencia_externa': getJsonField(
-                                      _model.pago3,
-                                      r'''$.reference''',
-                                    )?.toString(),
-                                  });
-                                  _model.apNotificacion2 =
-                                      await SendNotificationUserHulpCall.call(
-                                    userIdSupabase: _model
-                                        .validacion?.firstOrNull?.usuarioId,
-                                    title: 'Tu solicitud ha sido finalizada',
-                                    message: 'Haz click aqui',
-                                  );
-
-                                  _shouldSetState = true;
-                                  Navigator.pop(context);
-                                  await showDialog(
-                                    context: context,
-                                    builder: (dialogContext) {
-                                      return Dialog(
-                                        elevation: 0,
-                                        insetPadding: EdgeInsets.zero,
-                                        backgroundColor: Colors.transparent,
-                                        alignment:
-                                            AlignmentDirectional(0.0, 0.0)
-                                                .resolve(
-                                                    Directionality.of(context)),
-                                        child: ServicioAsignadoWidget(),
-                                      );
-                                    },
-                                  );
-
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                } else if ('DECLINED' ==
-                                    getJsonField(
-                                      _model.pago3,
-                                      r'''$.status''',
-                                    ).toString()) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'El pago fue rechazado por la entidad bancaria.',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  // El trabajo ya es suyo aunque el cobro falle: poner
-                                  // profesional_id en null lo desasignaba y el servicio
-                                  // desaparecia de su lista.
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'El pago no pudo ser aprobado. Intenta de nuevo.',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  // El trabajo ya es suyo aunque el cobro falle: poner
-                                  // profesional_id en null lo desasignaba y el servicio
-                                  // desaparecia de su lista.
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                }
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'No se pudo conectar con la pasarela de pago. Intenta más tarde.',
-                                      style: GoogleFonts.interTight(
-                                        color: FlutterFlowTheme.of(context)
-                                            .primaryBackground,
-                                      ),
-                                    ),
-                                    duration: Duration(milliseconds: 4000),
-                                    backgroundColor:
-                                        FlutterFlowTheme.of(context).primary,
-                                  ),
-                                );
-                                // El trabajo ya es suyo aunque el cobro falle: poner
-                                // profesional_id en null lo desasignaba y el servicio
-                                // desaparecia de su lista.
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'El cobro no pudo procesarse. Verifica el método de pago.',
-                                      style: GoogleFonts.interTight(
-                                        color: FlutterFlowTheme.of(context)
-                                            .primaryBackground,
-                                      ),
-                                    ),
-                                    duration: Duration(milliseconds: 4000),
-                                    backgroundColor:
-                                        FlutterFlowTheme.of(context).primary,
-                                  ),
-                                );
-                                if (_shouldSetState) safeSetState(() {});
-                                return;
-                              }
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Error al iniciar la transacción. Intenta nuevamente.',
-                                    style: GoogleFonts.interTight(
-                                      color: FlutterFlowTheme.of(context)
-                                          .primaryText,
-                                    ),
-                                  ),
-                                  duration: Duration(milliseconds: 4000),
-                                  backgroundColor:
-                                      FlutterFlowTheme.of(context).secondary,
-                                ),
-                              );
-                              // El trabajo ya es suyo aunque el cobro falle: poner
-                              // profesional_id en null lo desasignaba y el servicio
-                              // desaparecia de su lista.
-                              if (_shouldSetState) safeSetState(() {});
-                              return;
-                            }
-                          } else {
-                            _model.tarjeta =
-                                await TarjetasGuardadasTable().queryRows(
-                              queryFn: (q) => q.eqOrNull(
-                                'usuario_id',
-                                _model.validacion?.firstOrNull?.usuarioId,
-                              ),
-                            );
-                            _shouldSetState = true;
-                            if (_model.tarjeta == null ||
-                                _model.tarjeta!.isEmpty) {
-                              // El trabajo ya es suyo aunque el cobro falle: poner
-                              // profesional_id en null lo desasignaba y el servicio
-                              // desaparecia de su lista.
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'El cliente no tiene un método de pago registrado.',
-                                    style: TextStyle(
-                                      color: FlutterFlowTheme.of(context)
-                                          .primaryBackground,
-                                    ),
-                                  ),
-                                  duration: Duration(milliseconds: 4000),
-                                  backgroundColor:
-                                      FlutterFlowTheme.of(context).error,
-                                ),
-                              );
-                              if (_shouldSetState) safeSetState(() {});
-                              return;
-                            }
-                            _model.usuarioServicio =
-                                await UsuariosTable().queryRows(
-                              queryFn: (q) => q.eqOrNull(
-                                'id',
-                                _model.validacion?.firstOrNull?.usuarioId,
-                              ),
-                            );
-                            _shouldSetState = true;
-                            _model.aceptaceToken =
-                                await actions.getAcceptanceToken(
-                              FFDevEnvironmentValues().publicKey,
-                              FFDevEnvironmentValues().isProduction,
-                            );
-                            _shouldSetState = true;
-                            if (getJsonField(
-                              _model.aceptaceToken,
-                              r'''$.success''',
-                            )) {
-                              _model.pago = await actions.createTransaction(
-                                FFDevEnvironmentValues().privateKey,
-                                FFDevEnvironmentValues().publicKey,
-                                functions.stringToIngeter(_model
-                                    .tarjeta!.firstOrNull!.paymentSourceId),
-                                getJsonField(
-                                  _model.aceptaceToken,
-                                  r'''$.acceptanceToken''',
-                                ).toString(),
-                                ((valueOrDefault<double>(
-                                              _model.validacion?.firstOrNull
-                                                  ?.precioBase,
-                                              valueOrDefault<double>(
-                                                _model.validacion?.firstOrNull
-                                                    ?.precio,
-                                                0.0,
-                                              ),
-                                            ) +
-                                            valueOrDefault<double>(
-                                              _model.validacion?.firstOrNull
-                                                  ?.precioAdicionales,
-                                              0.0,
-                                            )) *
-                                        100)
-                                    .round(),
-                                'COP',
-                                _model.usuarioServicio!.firstOrNull!
-                                    .correoElectronico!,
-                                '${_model.validacion!.firstOrNull!.id}-${DateTime.now().millisecondsSinceEpoch}',
-                                FFDevEnvironmentValues().integrityKey,
-                                FFDevEnvironmentValues().isProduction,
-                              );
-                              _shouldSetState = true;
-                              if (getJsonField(
-                                _model.pago,
-                                r'''$.success''',
-                              )) {
-                                if ('APPROVED' ==
-                                    getJsonField(
-                                      _model.pago,
-                                      r'''$.status''',
-                                    ).toString()) {
-                                  await SolicitudesServicioTable().update(
-                                    data: {
-                                      'estado': 'finalizadas',
-                                      'profesional_id': currentUserUid,
-                                      'estado_pago': 'pagado',
-                                    },
-                                    matchingRows: (rows) => rows.eqOrNull(
-                                      'id',
-                                      widget!.idservicio,
-                                    ),
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '¡Servicio finalizado y pago aprobado!',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  await TransaccionesTable().insert({
-                                    // Lo que Wompi confirmo, no lo que calculo la app.
-                                    // Sin esto no hay forma de auditar un cobro.
-                                    'datos_pago': getJsonField(
-                                      _model.pago,
-                                      r'''$.fullData''',
-                                    ),
-                                    'solicitud_id':
-                                        _model.validacion?.firstOrNull?.id,
-                                    'usuario_id':
-                                        _model.usuarioServicio?.firstOrNull?.id,
-                                    'monto': valueOrDefault<double>(
-                                          _model.validacion?.firstOrNull
-                                              ?.precioBase,
-                                          valueOrDefault<double>(
-                                            _model.validacion?.firstOrNull
-                                                ?.precio,
-                                            0.0,
-                                          ),
-                                        ) +
-                                        valueOrDefault<double>(
-                                          _model.validacion?.firstOrNull
-                                              ?.precioAdicionales,
-                                          0.0,
-                                        ),
-                                    'moneda': 'COP',
-                                    'proveedor_pago': 'WOMPI',
-                                    'fecha_pago': supaSerialize<DateTime>(
-                                        getCurrentTimestamp),
-                                    'fecha_registro': supaSerialize<DateTime>(
-                                        getCurrentTimestamp),
-                                    'metodo_pago': 'Tarjeta',
-                                    'numero_transaccion': getJsonField(
-                                      _model.pago,
-                                      r'''$.transactionId''',
-                                    )?.toString(),
-                                    'referencia_externa': getJsonField(
-                                      _model.pago,
-                                      r'''$.reference''',
-                                    )?.toString(),
-                                  });
-                                  _model.apNotificacion =
-                                      await SendNotificationUserHulpCall.call(
-                                    userIdSupabase: _model
-                                        .validacion?.firstOrNull?.usuarioId,
-                                    title: 'Tu solicitud ha sido finalizada',
-                                    message: 'Haz click aqui',
-                                  );
-
-                                  _shouldSetState = true;
-                                  Navigator.pop(context);
-                                  await showDialog(
-                                    context: context,
-                                    builder: (dialogContext) {
-                                      return Dialog(
-                                        elevation: 0,
-                                        insetPadding: EdgeInsets.zero,
-                                        backgroundColor: Colors.transparent,
-                                        alignment:
-                                            AlignmentDirectional(0.0, 0.0)
-                                                .resolve(
-                                                    Directionality.of(context)),
-                                        child: ServicioAsignadoWidget(),
-                                      );
-                                    },
-                                  );
-
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                } else if ('DECLINED' ==
-                                    getJsonField(
-                                      _model.pago,
-                                      r'''$.status''',
-                                    ).toString()) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'El pago fue rechazado por la entidad bancaria.',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  // El trabajo ya es suyo aunque el cobro falle: poner
-                                  // profesional_id en null lo desasignaba y el servicio
-                                  // desaparecia de su lista.
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'El pago no pudo ser aprobado. Intenta de nuevo.',
-                                        style: GoogleFonts.interTight(
-                                          color: FlutterFlowTheme.of(context)
-                                              .primaryBackground,
-                                        ),
-                                      ),
-                                      duration: Duration(milliseconds: 4000),
-                                      backgroundColor:
-                                          FlutterFlowTheme.of(context).primary,
-                                    ),
-                                  );
-                                  // El trabajo ya es suyo aunque el cobro falle: poner
-                                  // profesional_id en null lo desasignaba y el servicio
-                                  // desaparecia de su lista.
-                                  if (_shouldSetState) safeSetState(() {});
-                                  return;
-                                }
-                              } else {
-                                // El trabajo ya es suyo aunque el cobro falle: poner
-                                // profesional_id en null lo desasignaba y el servicio
-                                // desaparecia de su lista.
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'El cobro no pudo procesarse. Verifica el método de pago.',
-                                      style: GoogleFonts.interTight(
-                                        color: FlutterFlowTheme.of(context)
-                                            .primaryBackground,
-                                      ),
-                                    ),
-                                    duration: Duration(milliseconds: 4000),
-                                    backgroundColor:
-                                        FlutterFlowTheme.of(context).primary,
-                                  ),
-                                );
-                                if (_shouldSetState) safeSetState(() {});
-                                return;
-                              }
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Error al iniciar la transacción. Intenta nuevamente.',
-                                    style: GoogleFonts.interTight(
-                                      color: FlutterFlowTheme.of(context)
-                                          .primaryBackground,
-                                    ),
-                                  ),
-                                  duration: Duration(milliseconds: 4000),
-                                  backgroundColor:
-                                      FlutterFlowTheme.of(context).primary,
-                                ),
-                              );
-                              // El trabajo ya es suyo aunque el cobro falle: poner
-                              // profesional_id en null lo desasignaba y el servicio
-                              // desaparecia de su lista.
-                              if (_shouldSetState) safeSetState(() {});
-                              return;
-                            }
-                          }
-                        }
-
-                        if (_shouldSetState) safeSetState(() {});
-                      },
+                      onPressed: _finalizando ? null : _finalizarServicio,
                       text: 'Aceptar',
                       options: FFButtonOptions(
                         height: 40.0,
