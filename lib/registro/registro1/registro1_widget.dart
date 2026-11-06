@@ -585,7 +585,7 @@ class _Registro1WidgetState extends State<Registro1Widget> {
                                           .labelMedium
                                           .fontStyle,
                                     ),
-                                hintText: 'Número de documento *',
+                                hintText: 'Número de documento (opcional)',
                                 hintStyle: FlutterFlowTheme.of(context)
                                     .labelMedium
                                     .override(
@@ -1401,33 +1401,6 @@ class _Registro1WidgetState extends State<Registro1Widget> {
                         onPressed: () async {
                           if (_model.formKey.currentState == null ||
                               !_model.formKey.currentState!.validate()) {
-                            return;
-                          }
-                          if (_model.documentoValue == null) {
-                            await showDialog(
-                              context: context,
-                              builder: (dialogContext) {
-                                return Dialog(
-                                  elevation: 0,
-                                  insetPadding: EdgeInsets.zero,
-                                  backgroundColor: Colors.transparent,
-                                  alignment: AlignmentDirectional(0.0, 0.0)
-                                      .resolve(Directionality.of(context)),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      FocusScope.of(dialogContext).unfocus();
-                                      FocusManager.instance.primaryFocus
-                                          ?.unfocus();
-                                    },
-                                    child: NotificacionWidget(
-                                      texto: 'Selecciona el tipo de documento',
-                                      verde: false,
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-
                             return;
                           }
                           if (_model.paisValue == null) {
