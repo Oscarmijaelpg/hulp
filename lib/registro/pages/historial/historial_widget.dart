@@ -1,3 +1,5 @@
+import '/flutter_flow/estado_solicitud_cliente.dart';
+import '/components/desglose_servicio_widget.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/components/menu_bar_widget.dart';
@@ -47,9 +49,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
 
-    _solicitudesTriggerSub = SupaFlow.client
-        .from('solicitudes_servicio')
-        .stream(primaryKey: ['id'])
+    _solicitudesTriggerSub = SupaFlow.solicitudesStream()
         .eqOrNull('usuario_id', currentUserUid)
         .listen((_) {
       if (!mounted) return;
@@ -448,6 +448,22 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                 ),
                                               ),
                                             ),
+                                            if (usaEstadosSprint3Cliente)
+                                              ChoiceChip(
+                                                label: const Text('Aceptado'),
+                                                selected: _model.seleccion == 'Aceptado',
+                                                showCheckmark: false,
+                                                backgroundColor: const Color(0xFFFBFAF9),
+                                                selectedColor: const Color(0xFFFBFAF9),
+                                                labelStyle: const TextStyle(color: Color(0xFF757575)),
+                                                shape: const StadiumBorder(),
+                                                side: _model.seleccion == 'Aceptado'
+                                                    ? const BorderSide(color: Color(0xFF757575), width: 2)
+                                                    : const BorderSide(color: Color(0xFFB5B5B5)),
+                                                onSelected: (activo) => safeSetState(() {
+                                                  _model.seleccion = activo ? 'Aceptado' : null;
+                                                }),
+                                              ),
                                             InkWell(
                                               splashColor: Colors.transparent,
                                               focusColor: Colors.transparent,
@@ -741,6 +757,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                               t.minute * 60 +
                                               t.second;
                                         }
+
                                         // Orden por fecha de reserva ascendente
                                         // y, a igualdad de fecha, por hora de
                                         // reserva ascendente. Nulos al final.
@@ -777,6 +794,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                           }
                                           return aHora.compareTo(bHora);
                                         }
+
                                         int prioridadEstado(String? estado) {
                                           switch (estado) {
                                             case 'entrantes':
@@ -801,7 +819,13 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                           return containerVwSolicitudesServiciosCompletaRowList
                                               .toList()
                                             ..sort(compararPorFechaAsc);
-                                        } else if (_model.seleccion ==
+                                        } else if (usaEstadosSprint3Cliente &&
+                                              (_model.seleccion ?? '').isNotEmpty) {
+                                            return containerVwSolicitudesServiciosCompletaRowList
+                                                .where((e) => coincideFiltroEstadoSprint3(e.estadoSolicitud, _model.seleccion!))
+                                                .toList()
+                                              ..sort(compararPorFechaAsc);
+                                          } else if (_model.seleccion ==
                                             'Pendiente') {
                                           return containerVwSolicitudesServiciosCompletaRowList
                                               .where((e) =>
@@ -1000,6 +1024,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                               decoration:
                                                                   BoxDecoration(
                                                                 color: () {
+                                                                    if (usaEstadosSprint3Cliente) return fondoEstadoSprint3Cliente(historialItem.estadoSolicitud);
                                                                   if (historialItem
                                                                           .estadoSolicitud ==
                                                                       'entrantes') {
@@ -1053,6 +1078,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                                   valueOrDefault<
                                                                       String>(
                                                                     () {
+                                                                    if (usaEstadosSprint3Cliente) return etiquetaEstadoSprint3Cliente(historialItem.estadoSolicitud);
                                                                       if (historialItem
                                                                               .estadoSolicitud ==
                                                                           'entrantes') {
@@ -1100,6 +1126,7 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                                         color: valueOrDefault<
                                                                             Color>(
                                                                           () {
+                                                                    if (usaEstadosSprint3Cliente) return textoEstadoSprint3Cliente(historialItem.estadoSolicitud);
                                                                             if (historialItem.estadoSolicitud ==
                                                                                 'entrantes') {
                                                                               return Color(0xFF606060);
@@ -1570,60 +1597,30 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                                   width: 8.0)),
                                                             ),
                                                           ),
-                                                          Padding(
-                                                            padding:
-                                                                EdgeInsets.all(
-                                                                    8.0),
-                                                            child: Row(
-                                                              mainAxisSize:
-                                                                  MainAxisSize
-                                                                      .max,
-                                                              mainAxisAlignment:
-                                                                  MainAxisAlignment
-                                                                      .spaceBetween,
-                                                              children: [
-                                                                Text(
-                                                                  'Precio',
-                                                                  style: FlutterFlowTheme.of(
-                                                                          context)
-                                                                      .bodyMedium
-                                                                      .override(
-                                                                        font: GoogleFonts
-                                                                            .inter(
-                                                                          fontWeight: FlutterFlowTheme.of(context)
-                                                                              .bodyMedium
-                                                                              .fontWeight,
-                                                                          fontStyle: FlutterFlowTheme.of(context)
-                                                                              .bodyMedium
-                                                                              .fontStyle,
-                                                                        ),
-                                                                        color: FlutterFlowTheme.of(context)
-                                                                            .accent3,
-                                                                        fontSize:
-                                                                            14.0,
-                                                                        letterSpacing:
-                                                                            0.0,
-                                                                        fontWeight: FlutterFlowTheme.of(context)
-                                                                            .bodyMedium
-                                                                            .fontWeight,
-                                                                        fontStyle: FlutterFlowTheme.of(context)
-                                                                            .bodyMedium
-                                                                            .fontStyle,
-                                                                      ),
-                                                                ),
-                                                                Flexible(
-                                                                  child: Text(
-                                                                    '\$${valueOrDefault<String>(
-                                                                      formatNumber(
-                                                                        historialItem
-                                                                            .precioCalculado,
-                                                                        formatType:
-                                                                            FormatType.decimal,
-                                                                        decimalType:
-                                                                            DecimalType.periodDecimal,
-                                                                      ),
-                                                                      '\$0',
-                                                                    )}',
+                                                          if (historialItem
+                                                                  .finanzasVersion ==
+                                                              1)
+                                                            DesgloseServicioWidget(
+                                                                solicitudId:
+                                                                    historialItem
+                                                                        .solicitudId!,
+                                                                actualizacion:
+                                                                    '${historialItem.finanzasRevision}:${historialItem.estadoPago}')
+                                                          else
+                                                            Padding(
+                                                              padding:
+                                                                  EdgeInsets
+                                                                      .all(8.0),
+                                                              child: Row(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .max,
+                                                                mainAxisAlignment:
+                                                                    MainAxisAlignment
+                                                                        .spaceBetween,
+                                                                children: [
+                                                                  Text(
+                                                                    'Precio',
                                                                     style: FlutterFlowTheme.of(
                                                                             context)
                                                                         .bodyMedium
@@ -1631,28 +1628,64 @@ class _HistorialWidgetState extends State<HistorialWidget> {
                                                                           font:
                                                                               GoogleFonts.inter(
                                                                             fontWeight:
-                                                                                FontWeight.w600,
+                                                                                FlutterFlowTheme.of(context).bodyMedium.fontWeight,
                                                                             fontStyle:
                                                                                 FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                                                                           ),
                                                                           color:
-                                                                              Color(0xFF3D91F4),
+                                                                              FlutterFlowTheme.of(context).accent3,
                                                                           fontSize:
                                                                               14.0,
                                                                           letterSpacing:
                                                                               0.0,
-                                                                          fontWeight:
-                                                                              FontWeight.w600,
+                                                                          fontWeight: FlutterFlowTheme.of(context)
+                                                                              .bodyMedium
+                                                                              .fontWeight,
                                                                           fontStyle: FlutterFlowTheme.of(context)
                                                                               .bodyMedium
                                                                               .fontStyle,
                                                                         ),
                                                                   ),
-                                                                ),
-                                                              ].divide(SizedBox(
-                                                                  width: 8.0)),
+                                                                  Flexible(
+                                                                    child: Text(
+                                                                      '\$${valueOrDefault<String>(
+                                                                        formatNumber(
+                                                                          historialItem
+                                                                              .precioCalculado,
+                                                                          formatType:
+                                                                              FormatType.decimal,
+                                                                          decimalType:
+                                                                              DecimalType.periodDecimal,
+                                                                        ),
+                                                                        '\$0',
+                                                                      )}',
+                                                                      style: FlutterFlowTheme.of(
+                                                                              context)
+                                                                          .bodyMedium
+                                                                          .override(
+                                                                            font:
+                                                                                GoogleFonts.inter(
+                                                                              fontWeight: FontWeight.w600,
+                                                                              fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                            ),
+                                                                            color:
+                                                                                Color(0xFF3D91F4),
+                                                                            fontSize:
+                                                                                14.0,
+                                                                            letterSpacing:
+                                                                                0.0,
+                                                                            fontWeight:
+                                                                                FontWeight.w600,
+                                                                            fontStyle:
+                                                                                FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                ].divide(SizedBox(
+                                                                    width:
+                                                                        8.0)),
+                                                              ),
                                                             ),
-                                                          ),
                                                         ],
                                                       ),
                                                     ),

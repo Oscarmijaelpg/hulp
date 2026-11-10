@@ -338,6 +338,11 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
           builder: (context, params) => DatosPersonalesWidget(),
         ),
         FFRoute(
+          name: MisDireccionesPage.routeName,
+          path: MisDireccionesPage.routePath,
+          builder: (context, params) => const MisDireccionesPage(),
+        ),
+        FFRoute(
           name: BusquedasWidget.routeName,
           path: BusquedasWidget.routePath,
           builder: (context, params) => BusquedasWidget(),

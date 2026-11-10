@@ -1,3 +1,4 @@
+import '/backend/confirmar_importe_cobro.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/supabase/supabase.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
@@ -26,6 +27,16 @@ class Recibo2Widget extends StatefulWidget {
 
 class _Recibo2WidgetState extends State<Recibo2Widget> {
   late Recibo2Model _model;
+  bool _esVersion1 = false;
+  Future<void> _cargarVersion() async {
+    if (!SupaFlow.finanzasV1Habilitadas || widget.recibo == null) return;
+    try {
+      final rows = await SolicitudesServicioTable().queryRows(
+          queryFn: (q) => q.eq('id', widget.recibo!.solicitudId), limit: 1);
+      if (mounted)
+        setState(() => _esVersion1 = rows.firstOrNull?.finanzasVersion == 1);
+    } catch (_) {/* Mantener el botón bloqueado si no se puede verificar. */}
+  }
 
   @override
   void setState(VoidCallback callback) {
@@ -38,6 +49,7 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
     super.initState();
     _model = createModel(context, () => Recibo2Model());
 
+    _cargarVersion();
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
   }
 
@@ -168,6 +180,11 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                       _model.aceptaceToken,
                       r'''$.success''',
                     )) {
+                      final cotizacion = await confirmarImporteCobro(context,
+                          solicitudId: widget.recibo!.solicitudId,
+                          reciboId: widget.recibo!.id,
+                          fuente: psId);
+                      if (cotizacion == null) return;
                       _model.pago = await actions.createTransaction(
                         FFDevEnvironmentValues().privateKey,
                         FFDevEnvironmentValues().publicKey,
@@ -182,6 +199,11 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                         widget.recibo!.id,
                         FFDevEnvironmentValues().integrityKey,
                         FFDevEnvironmentValues().isProduction,
+                        revisionFinanciera:
+                            (cotizacion['revision'] as num?)?.toInt(),
+                        montoCotizado: cotizacion['monto'] == null
+                            ? null
+                            : ((cotizacion['monto'] as num) * 100).round(),
                         personalDataAuthToken: getJsonField(
                               _model.aceptaceToken,
                               r'''$.personalDataAuthToken''',
@@ -382,6 +404,10 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                       _model.aceptaceToken,
                       r'''$.success''',
                     )) {
+                      final cotizacion = await confirmarImporteCobro(context,
+                          solicitudId: widget.recibo!.solicitudId,
+                          reciboId: widget.recibo!.id);
+                      if (cotizacion == null) return;
                       _model.pago1 =
                           await actions.createBancolombiaTransferTransaction(
                         FFDevEnvironmentValues().privateKey,
@@ -397,6 +423,11 @@ class _Recibo2WidgetState extends State<Recibo2Widget> {
                         currentUserEmail,
                         widget.recibo!.id,
                         FFDevEnvironmentValues().isProduction,
+                        revisionFinanciera:
+                            (cotizacion['revision'] as num?)?.toInt(),
+                        montoCotizado: cotizacion['monto'] == null
+                            ? null
+                            : ((cotizacion['monto'] as num) * 100).round(),
                       );
                       _shouldSetState = true;
                       if (getJsonField(

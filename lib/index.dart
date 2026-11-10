@@ -1,4 +1,5 @@
 // Export pages
+export '/datos_personales/mis_direcciones_page.dart' show MisDireccionesPage;
 export '/registro/pages/home_page/home_page_widget.dart' show HomePageWidget;
 export '/registro/pages/chatia/chatia_widget.dart' show ChatiaWidget;
 export '/registro/pages/miperfil/miperfil_widget.dart' show MiperfilWidget;

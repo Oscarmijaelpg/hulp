@@ -27,8 +27,10 @@ Future<dynamic> createBancolombiaTransferTransaction(
   String currency,
   String customerEmail, // ignorado: sale de la ficha del cliente
   String referenceId,
-  bool isProduction,
-) async {
+  bool isProduction, {
+  int? revisionFinanciera,
+  int? montoCotizado,
+}) async {
   try {
     if (acceptanceToken.trim().isEmpty) {
       return {
@@ -47,6 +49,8 @@ Future<dynamic> createBancolombiaTransferTransaction(
 
     final respuesta = await llamarWompi({
       'accion': 'crear_cobro_bancolombia',
+      if (revisionFinanciera != null) 'finanzas_revision': revisionFinanciera,
+      if (montoCotizado != null) 'monto_cotizado_centavos': montoCotizado,
       'recibo_id': referenceId.trim(),
       'acceptance_token': acceptanceToken.trim(),
     });

@@ -87,10 +87,6 @@ class DatosPersonalesModel extends FlutterFlowModel<DatosPersonalesWidget> {
     return null;
   }
 
-  // State field(s) for TextField widget.
-  FocusNode? textFieldFocusNode;
-  TextEditingController? textController6;
-  String? Function(BuildContext, String?)? textController6Validator;
   // Model for MenuBar component.
   late MenuBarModel menuBarModel;
 
@@ -121,9 +117,6 @@ class DatosPersonalesModel extends FlutterFlowModel<DatosPersonalesWidget> {
 
     textFieldCorFocusNode?.dispose();
     textFieldCorTextController?.dispose();
-
-    textFieldFocusNode?.dispose();
-    textController6?.dispose();
 
     menuBarModel.dispose();
   }

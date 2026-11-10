@@ -43,6 +43,7 @@ class PantallaMapaUbicacion extends StatefulWidget {
     required this.ciudades,
     this.inicial,
     this.direccionInicial,
+    this.separarCiudad = false,
   });
 
   /// Las ciudades con cobertura. Si el punto cae fuera, no se deja confirmar.
@@ -51,6 +52,7 @@ class PantallaMapaUbicacion extends StatefulWidget {
   /// Para volver a entrar y corregir sin empezar de cero.
   final Coordenadas? inicial;
   final String? direccionInicial;
+  final bool separarCiudad;
 
   @override
   State<PantallaMapaUbicacion> createState() => _PantallaMapaUbicacionState();
@@ -82,7 +84,8 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
   @override
   void initState() {
     super.initState();
-    _places = PlacesService(FFDevEnvironmentValues().googleMapsApiKey);
+    _places = PlacesService(FFDevEnvironmentValues().googleMapsApiKey,
+        separarCiudad: widget.separarCiudad);
     final ini = widget.inicial;
     if (ini != null) {
       _centro = LatLng(ini.latitud, ini.longitud);
@@ -263,8 +266,7 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
             child: Center(
               child: Transform.translate(
                 offset: const Offset(0, -18),
-                child: Icon(Icons.location_on,
-                    size: 44.0, color: tema.primary),
+                child: Icon(Icons.location_on, size: 44.0, color: tema.primary),
               ),
             ),
           ),
@@ -291,22 +293,20 @@ class _PantallaMapaUbicacionState extends State<PantallaMapaUbicacion> {
                       children: _sugerencias
                           .take(5)
                           .map((s) => _FilaSugerencia(
-                              sugerencia: s,
-                              onTap: () => _elegirSugerencia(s)))
+                              sugerencia: s, onTap: () => _elegirSugerencia(s)))
                           .toList(),
                     ),
                   ),
                 const Spacer(),
                 Padding(
-                  padding: const EdgeInsetsDirectional.fromSTEB(
-                      0.0, 0.0, 12.0, 8.0),
+                  padding:
+                      const EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 12.0, 8.0),
                   child: Align(
                     alignment: AlignmentDirectional.centerEnd,
                     child: _BotonRedondo(
                       icono: Icons.my_location_rounded,
                       cargando: _buscandoGps,
-                      onTap:
-                          _buscandoGps ? null : () => _usarUbicacionActual(),
+                      onTap: _buscandoGps ? null : () => _usarUbicacionActual(),
                     ),
                   ),
                 ),
@@ -464,7 +464,8 @@ class _PanelInferior extends StatelessWidget {
           ),
           if (ciudad != null && !sinCobertura)
             Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(26.0, 4.0, 0.0, 0.0),
+              padding:
+                  const EdgeInsetsDirectional.fromSTEB(26.0, 4.0, 0.0, 0.0),
               child: Text(
                 '$ciudad · con cobertura',
                 style: tema.bodySmall.override(

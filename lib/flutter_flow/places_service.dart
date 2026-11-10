@@ -7,7 +7,8 @@ import 'ubicacion_helpers.dart';
 
 /// Construye la dirección con los componentes de Places y Geocoding.
 /// Excluye country y repeticiones administrativas; conserva ciudad y nombres.
-String? direccionDesdeComponentesGoogle(dynamic componentes) {
+String? direccionDesdeComponentesGoogle(dynamic componentes,
+    {bool incluirCiudad = true}) {
   if (componentes is! List || componentes.isEmpty) return null;
   final partes = <({String texto, Set<String> tipos})>[];
 
@@ -22,8 +23,20 @@ String? direccionDesdeComponentesGoogle(dynamic componentes) {
   }
 
   final administracionesVistas = <String>{};
+  final nombresCiudad = partes
+      .where((p) =>
+          p.tipos.contains('locality') || p.tipos.contains('postal_town'))
+      .map((p) => p.texto.toLowerCase())
+      .toSet();
   final conservadas = partes.where((parte) {
     if (parte.tipos.contains('country')) return false;
+    if (!incluirCiudad &&
+        (parte.tipos.contains('locality') ||
+            parte.tipos.contains('postal_town') ||
+            (parte.tipos
+                    .any((t) => t.startsWith('administrative_area_level_')) &&
+                nombresCiudad.contains(parte.texto.toLowerCase()))))
+      return false;
     final esAdministrativa = parte.tipos.any((tipo) =>
         tipo == 'locality' ||
         tipo == 'postal_town' ||
@@ -134,9 +147,11 @@ Map<String, dynamic>? elegirMejorResultado(List<dynamic> resultados) {
 }
 
 /// Conserva el acceso al texto para consumidores de la selección de resultados.
-String? elegirMejorDireccion(List<dynamic> resultados) {
+String? elegirMejorDireccion(List<dynamic> resultados,
+    {bool incluirCiudad = true}) {
   final resultado = elegirMejorResultado(resultados);
-  return direccionDesdeComponentesGoogle(resultado?['address_components']);
+  return direccionDesdeComponentesGoogle(resultado?['address_components'],
+      incluirCiudad: incluirCiudad);
 }
 
 /// Una direccion resuelta desde un punto, con la ciudad que le corresponde.
@@ -173,9 +188,45 @@ bool mismaCiudad(String? a, String? b) {
 }
 
 class PlacesService {
-  PlacesService(this.claveApi);
+  PlacesService(this.claveApi, {this.separarCiudad = false});
 
   final String claveApi;
+  final bool separarCiudad;
+
+  /// Solo encuadra la ciudad; no fija el punto de una dirección.
+  Future<Coordenadas?> centroCiudad(String nombre) async {
+    if (claveApi.isEmpty || nombre.trim().isEmpty) return null;
+    try {
+      final respuesta = await http
+          .get(Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+            'address': '$nombre, Colombia',
+            'components': 'country:CO',
+            'language': 'es',
+            'key': claveApi,
+          }))
+          .timeout(const Duration(seconds: 10));
+      if (respuesta.statusCode != 200) return null;
+      final data = jsonDecode(utf8.decode(respuesta.bodyBytes)) as Map;
+      if (data['status'] != 'OK') return null;
+      for (final r in (data['results'] as List? ?? []).whereType<Map>()) {
+        final componentes =
+            (r['address_components'] as List? ?? []).whereType<Map>();
+        final coincide = componentes.any((c) =>
+            ((c['types'] as List?)?.any(
+                    ['locality', 'administrative_area_level_2'].contains) ??
+                false) &&
+            mismaCiudad(c['long_name'] as String?, nombre));
+        if (!coincide || r['partial_match'] == true) continue;
+        final location = (r['geometry'] as Map?)?['location'] as Map?;
+        final lat = (location?['lat'] as num?)?.toDouble();
+        final lng = (location?['lng'] as num?)?.toDouble();
+        if (lat != null && lng != null) return Coordenadas(lat, lng);
+      }
+    } catch (_) {
+      // Guardar calle y ciudad no depende de la disponibilidad de Maps.
+    }
+    return null;
+  }
 
   /// Identificador de sesión de facturación. Google cobra el autocompletado
   /// por sesión —muchas pulsaciones de tecla, un cobro— siempre que todas las
@@ -265,8 +316,9 @@ class PlacesService {
       final punto = cuerpo['location'] as Map<String, dynamic>?;
       final lat = (punto?['latitude'] as num?)?.toDouble();
       final lng = (punto?['longitude'] as num?)?.toDouble();
-      final direccion =
-          direccionDesdeComponentesGoogle(cuerpo['addressComponents']);
+      final direccion = direccionDesdeComponentesGoogle(
+          cuerpo['addressComponents'],
+          incluirCiudad: !separarCiudad);
       if (lat == null || lng == null || direccion == null) return null;
       return LugarResuelto(
         coordenadas: Coordenadas(lat, lng),
@@ -298,7 +350,8 @@ class PlacesService {
       if (cuerpo['status'] != 'OK') return null;
 
       final resultados = (cuerpo['results'] as List?) ?? const [];
-      final direccion = elegirMejorDireccion(resultados);
+      final direccion =
+          elegirMejorDireccion(resultados, incluirCiudad: !separarCiudad);
       if (direccion == null) return null;
 
       String? ciudad;

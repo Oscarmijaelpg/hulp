@@ -1,18 +1,16 @@
+import '/backend/supabase/supabase.dart';
 // REQ-001 — ServiceBookingFormPage
 // UI fiel al mockup aprobado: SPEC_REQ-001_service-form.md
 // Datos del servicio vienen del backend vía ServiceStore (ServiciosRow).
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '/components/pantalla_mapa_ubicacion.dart';
+import '/backend/direcciones_usuario.dart';
+import '/components/agregar_direccion_agenda_page.dart';
+import '/components/direcciones_agenda_estilo.dart';
+import '/components/selector_direcciones_agenda.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
-import '/flutter_flow/ubicacion_helpers.dart';
 import '/auth/supabase_auth/auth_util.dart';
-import '/backend/supabase/database/tables/servicios.dart';
-import '/backend/supabase/database/tables/solicitudes_servicio.dart';
-import '/backend/supabase/database/tables/ciudades.dart';
-import '/backend/supabase/database/tables/tarjetas_guardadas.dart';
-import '/backend/supabase/database/tables/metodos_pago.dart';
 import '/metodos_de_pago/metodos_de_pago_widget.dart';
 import '/components/menu_bar_widget.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -20,7 +18,6 @@ import 'booking_success_page.dart';
 import 'booking_args_store.dart';
 
 // ── Tokens de color (SPEC §1.1) ───────────────────────────────────────────────
-const _kPrimary = Color(0xFF1A3C2E);
 const _kButton = Color(0xFF157867);
 const _kPrimaryLight = Color(0xFFE8F5EE);
 const _kAccent = Color(0xFF2D8653);
@@ -51,7 +48,10 @@ final List<String> _kTimeChips = List<String>.generate(
 );
 
 class ServiceBookingFormPage extends StatefulWidget {
-  const ServiceBookingFormPage({super.key});
+  const ServiceBookingFormPage(
+      {super.key, this.direcciones, this.cargarCiudades});
+  final DireccionesUsuarioRepository? direcciones;
+  final Future<List<CiudadesRow>> Function()? cargarCiudades;
 
   static const String routeName = 'serviceBookingForm';
   static const String routePath = '/serviceBookingForm';
@@ -67,39 +67,72 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
   String? _selectedTimeChip;
   CiudadesRow? _selectedCiudad;
 
-  late final Future<List<CiudadesRow>> _ciudadesFuture;
+  Future<List<CiudadesRow>>? _ciudadesFuture;
+  late final DireccionesUsuarioRepository _direcciones;
+  DireccionGuardada? _direccionElegida;
+  bool _abriendoDireccion = false;
+  bool _cargandoCiudades = false;
 
   final _addressCtrl = TextEditingController();
-  final _complementoCtrl = TextEditingController();
+  final _notasCtrl = TextEditingController();
 
-  /// Punto exacto del servicio. Va junto con la dirección: las dos salen de
-  /// la misma pantalla de mapa, así que no pueden contradecirse.
-  Coordenadas? _coordenadas;
-
-  Future<void> _abrirMapa() async {
+  Future<void> _abrirDirecciones() async {
+    if (_abriendoDireccion || _isSubmitting) return;
     FocusScope.of(context).unfocus();
-    // Se esperan las ciudades antes de abrir: el mapa las necesita para saber
-    // si el punto cae dentro de la cobertura.
-    final ciudades = await _ciudadesFuture;
-    if (!mounted) return;
-    final r = await Navigator.of(context).push<UbicacionElegida>(
-      MaterialPageRoute(
-        builder: (_) => PantallaMapaUbicacion(
-          ciudades: ciudades,
-          inicial: _coordenadas,
-          direccionInicial: _addressCtrl.text,
-        ),
-      ),
-    );
-    if (r == null || !mounted) return;
     setState(() {
-      _coordenadas = r.coordenadas;
-      _addressCtrl.text = r.direccion;
-      // La ciudad sale del mismo punto, asi que no puede contradecirlo.
-      _selectedCiudad = r.ciudad;
-      _errors.remove('address');
-      _errors.remove('ciudad');
+      _abriendoDireccion = true;
+      _cargandoCiudades = true;
     });
+    try {
+      final ciudades = await (_ciudadesFuture ??= _cargarCiudades());
+      if (!mounted) return;
+      setState(() => _cargandoCiudades = false);
+      final direccion = await showModalBottomSheet<DireccionGuardada>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        builder: (context) => ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .88),
+            child: SelectorDireccionesAgenda(
+              cargar: _direcciones.cargar,
+              ciudades: ciudades,
+              seleccionadaId: _direccionElegida?.id,
+              agregar: (context) => Navigator.of(context)
+                  .push<DireccionGuardada>(MaterialPageRoute(
+                      builder: (_) => AgregarDireccionAgendaPage(
+                          ciudades: ciudades,
+                          ciudadInicial: _selectedCiudad,
+                          guardar: _direcciones.guardar))),
+            )),
+      );
+      if (direccion == null || !mounted) return;
+      final coincidencias =
+          ciudades.where((c) => c.id == direccion.ciudadId && c.activo);
+      final ciudad = coincidencias.isEmpty ? null : coincidencias.first;
+      if (ciudad == null) throw StateError('Ciudad sin cobertura');
+      setState(() {
+        _direccionElegida = direccion;
+        _addressCtrl.text = direccion.direccion;
+        _selectedCiudad = ciudad;
+        _errors.remove('address');
+      });
+    } catch (_) {
+      _ciudadesFuture = null;
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('No pudimos cargar las ciudades. Intenta de nuevo.')));
+    } finally {
+      if (mounted)
+        setState(() {
+          _abriendoDireccion = false;
+          _cargandoCiudades = false;
+        });
+    }
   }
 
   bool _isSubmitting = false;
@@ -124,23 +157,22 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
   void initState() {
     super.initState();
     _servicio = ServiceStore.consume();
-    _ciudadesFuture = CiudadesTable()
-        .queryRows(
-      queryFn: (q) => q.eq('activo', true).order('nombre', ascending: true),
-    )
-        .then((rows) {
-      debugPrint('🏙️ ciudades loaded: ${rows.length} rows');
-      return rows;
-    }).catchError((e) {
-      debugPrint('🏙️ ciudades error: $e');
-      throw e;
-    });
+    _direcciones = widget.direcciones ?? DireccionesUsuarioRepository();
+    _ciudadesFuture = _cargarCiudades();
+    _ciudadesFuture!.ignore();
   }
+
+  Future<List<CiudadesRow>> _cargarCiudades() async => widget.cargarCiudades !=
+          null
+      ? await widget.cargarCiudades!()
+      : await CiudadesTable().queryRows(
+          queryFn: (q) =>
+              q.eq('activo', true).order('nombre', ascending: true));
 
   @override
   void dispose() {
     _addressCtrl.dispose();
-    _complementoCtrl.dispose();
+    _notasCtrl.dispose();
     super.dispose();
   }
 
@@ -149,10 +181,8 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
     _errors.clear();
     if (_selectedDate == null) _errors['date'] = 'La fecha es obligatoria';
     if (_selectedTimeChip == null) _errors['time'] = 'La hora es obligatoria';
-    // La ciudad ya no se elige: viene del punto. Si falta es que no se
-    // llego a confirmar una ubicacion valida.
-    if (_selectedCiudad == null) {
-      _errors['address'] = 'Selecciona la ubicación en el mapa';
+    if (_selectedCiudad == null || _direccionElegida == null) {
+      _errors['address'] = 'Selecciona una dirección para el servicio';
     }
     if (_addressCtrl.text.trim().isEmpty)
       _errors['address'] = 'La dirección es obligatoria';
@@ -184,6 +214,28 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
       return;
     }
     setState(() => _isSubmitting = true);
+
+    // La libreta puede cambiar desde Admin mientras este formulario está abierto.
+    // No crear con una dirección archivada o datos que el cliente no confirmó.
+    try {
+      final actual = await _direcciones.buscarActiva(_direccionElegida!.id);
+      if (!mounted) return;
+      if (actual == null || !actual.mismaUbicacion(_direccionElegida!)) {
+        setState(() {
+          _isSubmitting = false;
+          _errors['address'] = 'La dirección cambió. Vuelve a seleccionarla.';
+        });
+        return;
+      }
+    } catch (_) {
+      if (mounted)
+        setState(() {
+          _isSubmitting = false;
+          _errors['address'] =
+              'No pudimos verificar la dirección. Intenta de nuevo.';
+        });
+      return;
+    }
 
     // Validar que el usuario tenga un método de pago antes de crear la solicitud.
     // El cobro se realiza al finalizar el servicio, así que debe existir un método
@@ -217,16 +269,8 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
 
     try {
       final direccion = _addressCtrl.text.trim();
-      final complemento = _complementoCtrl.text.trim();
+      final complemento = _direccionElegida!.complementoYReferencia;
       final nombreCiudad = _selectedCiudad!.nombre;
-      final direccionConComplemento = complemento.isEmpty
-          ? direccion
-          : '$direccion,\n$complemento';
-      final ubicacionParts = [
-        nombreCiudad,
-        if (direccionConComplemento.isNotEmpty) direccionConComplemento,
-      ];
-      final ubicacion = ubicacionParts.join('\n');
 
       final horaStr = '${_selectedTimeChip!}:00';
 
@@ -242,14 +286,11 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
         // precio), igual que el insert del panel admin.
         'precio_base': _servicio?.precio ?? 0.0,
         'precio_adicionales': 0.0,
+        if (SupaFlow.finanzasV1Habilitadas)
+          'notas_cliente': _notasCtrl.text.trim(),
         'fecha': _selectedDate!.toIso8601String().split('T').first,
         'hora': horaStr,
-        'ubicacion': ubicacion,
-        'ciudad_id': _selectedCiudad?.id,
-        // Van juntas o no van: la restriccion de la tabla rechaza media
-        // coordenada.
-        'latitud': _coordenadas?.latitud,
-        'longitud': _coordenadas?.longitud,
+        ..._direccionElegida!.datosSolicitud(ciudad: nombreCiudad),
         'estado': 'entrantes',
         'estado_pago': 'pendiente',
         'tipo': 'app',
@@ -452,13 +493,6 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _ServiceCard(
-                  name: _serviceName,
-                  desc: _serviceDesc,
-                  price: _servicePrice,
-                  imageUrl: _serviceImage,
-                ),
-                const SizedBox(height: 24),
                 Text(
                   'Agenda tu servicio',
                   style: GoogleFonts.inter(
@@ -504,23 +538,46 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // Dirección: ya no se escribe a mano. Se elige en el mapa,
-                // que devuelve punto y dirección a la vez y evita que el texto
-                // y las coordenadas se contradigan.
-                const _FieldLabel('Dirección'),
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const _FieldLabel('Dirección'),
+                      if (_direccionElegida != null)
+                        TextButton(
+                            onPressed: _abriendoDireccion || _isSubmitting
+                                ? null
+                                : _abrirDirecciones,
+                            style: TextButton.styleFrom(
+                                foregroundColor: direccionVerde,
+                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(48, 28),
+                                tapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap),
+                            child: Text('Cambiar',
+                                style: textoDireccion(
+                                    weight: FontWeight.w600,
+                                    color: direccionVerde))),
+                    ]),
                 const SizedBox(height: 6),
                 _BotonUbicacion(
                   direccion: _addressCtrl.text,
+                  seleccionada: _direccionElegida,
+                  ciudad: _selectedCiudad?.nombre,
+                  cargando: _cargandoCiudades,
                   errorText: _errors['address'],
-                  onTap: _abrirMapa,
+                  onTap: _abrirDirecciones,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 28),
 
-                // Complemento
-                const _FieldLabel('Complemento / referencia (opcional)'),
+                const _FieldLabel('Notas para el equipo Hulp (opcional)'),
                 const SizedBox(height: 6),
-                _ComplementoField(controller: _complementoCtrl),
-                const SizedBox(height: 32),
+                TextField(
+                    controller: _notasCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                        hintText: 'Indicaciones para tu servicio',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 24),
 
                 // Botón Agendar
                 SizedBox(
@@ -530,7 +587,7 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                     onPressed: _isSubmitting ? null : _onAgendar,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _kButton,
-                      disabledBackgroundColor: _kButton.withOpacity(0.6),
+                      disabledBackgroundColor: _kButton.withValues(alpha: 0.6),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -573,82 +630,6 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
 // ══════════════════════════════════════════════════════════════════════════════
 // Sub-widgets
 // ══════════════════════════════════════════════════════════════════════════════
-
-class _ServiceCard extends StatelessWidget {
-  const _ServiceCard({
-    required this.name,
-    required this.desc,
-    required this.price,
-    required this.imageUrl,
-  });
-  final String name, desc, price, imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _kBorder),
-        boxShadow: const [
-          BoxShadow(
-              blurRadius: 6, color: Color(0x0F000000), offset: Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: imageUrl.isNotEmpty
-                ? Image.network(
-                    imageUrl,
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _placeholder(),
-                  )
-                : _placeholder(),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: _kAccent)),
-                const SizedBox(height: 4),
-                Text(desc,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                        fontSize: 13, color: _kTextSecondary)),
-                const SizedBox(height: 6),
-                Text(price,
-                    style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: _kAccent)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _placeholder() => Container(
-        width: 80,
-        height: 80,
-        color: _kPrimaryLight,
-        child: const Icon(Icons.cleaning_services_outlined,
-            color: _kAccent, size: 36),
-      );
-}
 
 class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.text);
@@ -843,83 +824,7 @@ class _TimeChip extends StatelessWidget {
   }
 }
 
-class _ComplementoField extends StatefulWidget {
-  const _ComplementoField({required this.controller});
-  final TextEditingController controller;
-
-  @override
-  State<_ComplementoField> createState() => _ComplementoFieldState();
-}
-
-class _ComplementoFieldState extends State<_ComplementoField> {
-  final _foco = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    // El Scaffold no encoge con el teclado (el menú flotante quedaría sobre
-    // las teclas), así que el desplazamiento hasta el campo lo hacemos aquí.
-    // El retardo espera a que el teclado termine de subir: antes de eso la
-    // altura visible todavía es la de pantalla completa y no se movería nada.
-    _foco.addListener(() {
-      if (!_foco.hasFocus) return;
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (!mounted || !_foco.hasFocus) return;
-        Scrollable.ensureVisible(
-          context,
-          alignment: 0.5,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _foco.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.controller,
-      focusNode: _foco,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (_) => FocusScope.of(context).unfocus(),
-      maxLines: 2,
-      minLines: 2,
-      style: GoogleFonts.inter(fontSize: 15, color: _kTextPrimary),
-      decoration: InputDecoration(
-        hintText: 'Edificio Centro 85, torre B. Recepción 24/7.',
-        hintStyle: GoogleFonts.inter(fontSize: 15, color: _kTextSecondary),
-        prefixIcon: const Padding(
-          padding: EdgeInsets.only(bottom: 24),
-          child:
-              Icon(Icons.edit_note_outlined, size: 20, color: _kTextSecondary),
-        ),
-        prefixIconConstraints:
-            const BoxConstraints(minWidth: 48, minHeight: 48),
-        filled: true,
-        fillColor: _kSurface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kBorder)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kBorder)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _kPrimary, width: 1.5)),
-      ),
-    );
-  }
-}
-
-/// La dirección, que ya no se teclea: se toca y se elige en el mapa.
+/// Dirección elegida desde la libreta, conservando el aspecto del formulario.
 ///
 /// Muestra lo elegido, o invita a elegirlo. Se comporta como un campo del
 /// formulario —misma altura, mismo borde, mismo error en rojo— para que no
@@ -929,11 +834,17 @@ class _BotonUbicacion extends StatelessWidget {
     required this.direccion,
     required this.onTap,
     this.errorText,
+    this.seleccionada,
+    this.ciudad,
+    this.cargando = false,
   });
 
   final String direccion;
   final VoidCallback onTap;
   final String? errorText;
+  final DireccionGuardada? seleccionada;
+  final String? ciudad;
+  final bool cargando;
 
   @override
   Widget build(BuildContext context) {
@@ -945,14 +856,17 @@ class _BotonUbicacion extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: onTap,
+          key: const ValueKey('direccion-agenda'),
+          onTap: cargando ? null : onTap,
           borderRadius: BorderRadius.circular(12.0),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12.0, vertical: 14.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 14.0),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7F8F9),
+              color: seleccionada == null
+                  ? direccionSuperficie
+                  : direccionSeleccionada,
               borderRadius: BorderRadius.circular(12.0),
               border: Border.all(
                 color: hayError ? tema.error : const Color(0xFFDFDFDF),
@@ -962,28 +876,62 @@ class _BotonUbicacion extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  vacio ? Icons.map_outlined : Icons.place_rounded,
-                  size: 20.0,
-                  color: vacio ? tema.secondaryText : tema.primary,
+                  seleccionada == null
+                      ? Icons.map_outlined
+                      : iconoDireccion(seleccionada!.tipo),
+                  size: seleccionada == null ? 20 : 28,
+                  color: seleccionada == null ? direccionGris : direccionVerde,
                 ),
                 const SizedBox(width: 10.0),
                 Expanded(
-                  child: Text(
-                    vacio ? 'Seleccionar en el mapa' : direccion,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tema.bodyMedium.override(
-                      font: GoogleFonts.inter(
-                        fontWeight: vacio ? FontWeight.w400 : FontWeight.w500,
-                      ),
-                      color: vacio ? tema.secondaryText : tema.primaryText,
-                      fontSize: 14.0,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (seleccionada != null) ...[
+                          Text(seleccionada!.nombre,
+                              style: textoDireccion(
+                                  size: 17, weight: FontWeight.w600)),
+                          const SizedBox(height: 3),
+                        ],
+                        Text(
+                            vacio
+                                ? 'Seleccionar una dirección'
+                                : '$direccion${ciudad == null ? '' : ', $ciudad'}',
+                            style: textoDireccion(
+                                color: seleccionada == null
+                                    ? direccionGris
+                                    : const Color(0xFF333333))),
+                        if (seleccionada?.complemento.trim().isNotEmpty ??
+                            false) ...[
+                          const SizedBox(height: 6),
+                          Text(seleccionada!.complemento.trim(),
+                              key: const ValueKey('direccion-complemento'),
+                              style: textoDireccion(color: direccionGris)),
+                        ],
+                        if (seleccionada?.referencia.trim().isNotEmpty ?? false)
+                          Padding(
+                            padding: EdgeInsets.only(
+                                top: seleccionada!.complemento.trim().isEmpty
+                                    ? 6
+                                    : 2),
+                            child: Text(seleccionada!.referencia.trim(),
+                                key: const ValueKey('direccion-referencia'),
+                                style: textoDireccion(color: direccionGris)),
+                          ),
+                      ]),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    size: 20.0, color: tema.secondaryText),
+                if (cargando)
+                  const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: direccionVerde))
+                else
+                  Icon(Icons.chevron_right_rounded,
+                      size: 20.0,
+                      color: seleccionada == null
+                          ? direccionGris
+                          : direccionVerde),
               ],
             ),
           ),
