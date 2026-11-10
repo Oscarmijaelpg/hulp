@@ -1,3 +1,4 @@
+import '/backend/consultar_cobro_cliente.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/api_requests/api_calls.dart';
 import '/backend/supabase/supabase.dart';
@@ -316,6 +317,12 @@ class _AceptarServicioWidgetState extends State<AceptarServicioWidget> {
                                     FlutterFlowTheme.of(context).secondary,
                               ),
                             );
+                            final cotizacion = await consultarCobroCliente(
+                                context,
+                                solicitudId: _model.validacion!.first.id,
+                                fuente: functions.stringToIngeter(_model
+                                    .tarjeta!.firstOrNull!.paymentSourceId));
+                            if (cotizacion == null) return;
                             _model.pago = await actions.createTransaction(
                               FFDevEnvironmentValues().privateKey,
                               FFDevEnvironmentValues().publicKey,
@@ -325,24 +332,33 @@ class _AceptarServicioWidgetState extends State<AceptarServicioWidget> {
                                 _model.aceptaceToken,
                                 r'''$.acceptanceToken''',
                               ).toString(),
-                              ((valueOrDefault<double>(
-                                            _model.validacion?.firstOrNull
-                                                ?.precio,
-                                            0.0,
-                                          ) +
-                                          valueOrDefault<double>(
-                                            _model.validacion?.firstOrNull
-                                                ?.precioAdicionales,
-                                            0.0,
-                                          )) *
-                                      100)
-                                  .round(),
+                              _model.validacion?.firstOrNull?.finanzasVersion ==
+                                      1
+                                  ? 0
+                                  : ((valueOrDefault<double>(
+                                                _model.validacion?.firstOrNull
+                                                    ?.precio,
+                                                0.0,
+                                              ) +
+                                              valueOrDefault<double>(
+                                                _model.validacion?.firstOrNull
+                                                    ?.precioAdicionales,
+                                                0.0,
+                                              )) *
+                                          100)
+                                      .round(),
                               'COP',
                               _model.usuarioServicio!.firstOrNull!
                                   .correoElectronico!,
                               _model.validacion!.firstOrNull!.id,
                               FFDevEnvironmentValues().integrityKey,
                               true,
+                              revisionFinanciera:
+                                  (cotizacion['revision'] as num?)?.toInt(),
+                              montoCotizado: cotizacion['monto'] == null
+                                  ? null
+                                  : ((cotizacion['monto'] as num) * 100)
+                                      .round(),
                               personalDataAuthToken: getJsonField(
                                     _model.aceptaceToken,
                                     r'''$.personalDataAuthToken''',
@@ -431,15 +447,22 @@ class _AceptarServicioWidgetState extends State<AceptarServicioWidget> {
                                       _model.validacion?.firstOrNull?.id,
                                   'usuario_id':
                                       _model.usuarioServicio?.firstOrNull?.id,
-                                  'monto': valueOrDefault<double>(
-                                        _model.validacion?.firstOrNull?.precio,
-                                        0.0,
-                                      ) +
-                                      valueOrDefault<double>(
-                                        _model.validacion?.firstOrNull
-                                            ?.precioAdicionales,
-                                        0.0,
-                                      ),
+                                  'monto': _model.validacion?.firstOrNull
+                                              ?.finanzasVersion ==
+                                          1
+                                      ? (getJsonField(_model.pago, r'$.amount')
+                                              as num) /
+                                          100
+                                      : valueOrDefault<double>(
+                                            _model.validacion?.firstOrNull
+                                                ?.precio,
+                                            0.0,
+                                          ) +
+                                          valueOrDefault<double>(
+                                            _model.validacion?.firstOrNull
+                                                ?.precioAdicionales,
+                                            0.0,
+                                          ),
                                   'moneda': 'COP',
                                   'proveedor_pago': 'WOMPI',
                                   'fecha_pago': supaSerialize<DateTime>(

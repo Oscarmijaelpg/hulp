@@ -80,19 +80,17 @@ class _DashboardProveedorState extends State<DashboardProveedor> {
     // Tiempo real: recarga las métricas cuando cambian las solicitudes del
     // proveedor (p. ej. al finalizar un servicio). Supabase Realtime no emite
     // sobre vistas, por eso se escucha la tabla base `solicitudes_servicio`.
-    _solicitudesSub = SupaFlow.client
-        .from('solicitudes_servicio')
-        .stream(primaryKey: ['id'])
+    _solicitudesSub = SupaFlow.solicitudesStream()
         .eq('profesional_id', widget.proveedorId)
         .listen((_) {
-          if (_primeraEmisionStream) {
-            _primeraEmisionStream = false;
-            return;
-          }
-          if (mounted) {
-            _cargarDatos();
-          }
-        });
+      if (_primeraEmisionStream) {
+        _primeraEmisionStream = false;
+        return;
+      }
+      if (mounted) {
+        _cargarDatos();
+      }
+    });
   }
 
   @override
@@ -196,7 +194,9 @@ class _DashboardProveedorState extends State<DashboardProveedor> {
 
         final response = await SupaFlow.client
             .from('solicitudes_servicio')
-            .select('precio_base, precio_adicionales, precio')
+            .select(SupaFlow.finanzasV1Habilitadas
+                ? 'precio_base, precio_adicionales, precio, finanzas_version, pago_proveedor, saldo_transferir'
+                : 'precio_base, precio_adicionales, precio')
             .eq('profesional_id', widget.proveedorId)
             .eq('estado', 'finalizadas')
             .gte('fecha', fechaInicio)
@@ -217,7 +217,9 @@ class _DashboardProveedorState extends State<DashboardProveedor> {
             final adicionales =
                 double.tryParse((item['precio_adicionales'] ?? 0).toString()) ??
                     0;
-            total += calcularIngresoProveedor(base + adicionales);
+            total += item['finanzas_version'] == null
+                ? calcularIngresoProveedor(base + adicionales)
+                : (item['pago_proveedor'] as num).toDouble();
           }
         }
 

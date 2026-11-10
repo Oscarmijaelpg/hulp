@@ -1,3 +1,5 @@
+import '/backend/transiciones_solicitud.dart';
+import '/components/desglose_servicio_widget.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/api_requests/api_calls.dart';
 import '/backend/schema/structs/index.dart';
@@ -43,6 +45,86 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
   late SolicitudesModel _model;
 
   final scaffoldKey = GlobalKey<ScaffoldState>();
+  final _transicionesPendientes = <String>{};
+
+  void _recargarSolicitudes() {
+    safeSetState(() {
+      _model.containerSupabaseStream2 = null;
+      _model.containerSupabaseStream4 = null;
+    });
+  }
+
+  Stream<List<SolicitudesServicioRow>> _solicitudesPorServicio(
+      List<ProfesionalServiciosRow> servicios) {
+    if (usaTransicionesSprint3 && servicios.isEmpty) {
+      return Stream.value(const <SolicitudesServicioRow>[]);
+    }
+    return SupaFlow.client
+        .from('solicitudes_servicio')
+        .stream(primaryKey: ['id'])
+        .inFilterOrNull('servicio_id', servicios.map((e) => e.servicioId).toList())
+        .map((rows) => rows.map(SolicitudesServicioRow.new).toList());
+  }
+
+  bool _estadoAzul(String estado) =>
+      estado == 'aceptadas' ||
+      (usaTransicionesSprint3 &&
+          (estado == 'iniciadas' || estado == 'en camino'));
+
+  AccionSolicitud? _siguiente(SolicitudesServicioRow solicitud) =>
+      siguienteAccionSolicitud(
+        estado: solicitud.estado,
+        fechaServicio: solicitud.fecha,
+        fechaAceptacion: solicitud.fechaAceptacion,
+        ahora: DateTime.now(),
+      );
+
+  Future<void> _registrarAccion(
+      SolicitudesServicioRow solicitud, AccionSolicitud accion) async {
+    if (!_transicionesPendientes.add(solicitud.id)) return;
+    safeSetState(() {});
+    try {
+      final nueva = await transicionarSolicitud(solicitud.id, accion);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(accion.notificacion)),
+        );
+      }
+      if (nueva) {
+        try {
+          await SendNotificationUserCall.call(
+            userIdSupabase: solicitud.usuarioId,
+            title: accion.notificacion,
+            message: 'Consulta los detalles de tu solicitud en Hulp.',
+          );
+        } catch (_) {
+          // El servidor ya confirmó el cambio de estado.
+        }
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(mensajeTransicionSolicitud(error))),
+        );
+      }
+    } finally {
+      _transicionesPendientes.remove(solicitud.id);
+      _recargarSolicitudes();
+    }
+  }
+
+  Future<void> _abrirCierre(BuildContext context, String id) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        elevation: 0,
+        insetPadding: EdgeInsets.zero,
+        backgroundColor: Colors.transparent,
+        child: FinalizarServicioWidget(idservicio: id),
+      ),
+    );
+    _recargarSolicitudes();
+  }
 
   @override
   void initState() {
@@ -606,32 +688,13 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                               ],
                                                             ),
                                                           ),
-                                                          if (_model
-                                                                  .switchValue ??
-                                                              true)
+                                                          if (usaTransicionesSprint3 ||
+                                                              (_model.switchValue ?? true))
                                                             StreamBuilder<
                                                                 List<
                                                                     SolicitudesServicioRow>>(
-                                                              stream: _model.containerSupabaseStream4 ??= SupaFlow
-                                                                  .client
-                                                                  .from(
-                                                                      "solicitudes_servicio")
-                                                                  .stream(
-                                                                      primaryKey: [
-                                                                        'id'
-                                                                      ])
-                                                                  .inFilterOrNull(
-                                                                    'servicio_id',
-                                                                    containerProfesionalServiciosRowList
-                                                                        .map((e) =>
-                                                                            e.servicioId)
-                                                                        .toList(),
-                                                                  )
-                                                                  .map((list) => list
-                                                                      .map((item) =>
-                                                                          SolicitudesServicioRow(
-                                                                              item))
-                                                                      .toList()),
+                                                              stream: _model.containerSupabaseStream4 ??=
+                                                                  _solicitudesPorServicio(containerProfesionalServiciosRowList),
                                                               builder: (context,
                                                                   snapshot) {
                                                                 // Customize what your widget looks like when it's loading.
@@ -655,10 +718,14 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                     ),
                                                                   );
                                                                 }
-                                                                List<SolicitudesServicioRow>
-                                                                    containerSolicitudesServicioRowList =
-                                                                    snapshot
-                                                                        .data!;
+                                                                final solicitudesPorServicio =
+                                                                    snapshot.data!;
+                                                                final solicitudesEntrantes = usaTransicionesSprint3
+                                                                    ? {
+                                                                        for (final solicitud in solicitudesPorServicio) solicitud.id: solicitud,
+                                                                        for (final solicitud in containerSolicitudesServicioRowList) solicitud.id: solicitud,
+                                                                      }.values
+                                                                    : solicitudesPorServicio;
 
                                                                 return Container(
                                                                   decoration:
@@ -716,7 +783,15 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                             builder:
                                                                                 (context) {
                                                                               // REQ-001: orden ascendente por fecha y hora de la reserva.
-                                                                              final serviciosent = containerSolicitudesServicioRowList.where((e) => e.estado == 'entrantes' && _model.esDeMiCiudad(e.ciudadId)).toList()
+                                                                              final serviciosent = solicitudesEntrantes.where((e) {
+                                                                                if (e.estado != 'entrantes') return false;
+                                                                                if (!usaTransicionesSprint3) return _model.esDeMiCiudad(e.ciudadId);
+                                                                                if (e.profesionalId != null) return e.profesionalId == currentUserUid;
+                                                                                return (_model.switchValue ?? true) &&
+                                                                                    _model.ciudadIdProveedor != null &&
+                                                                                    e.ciudadId == _model.ciudadIdProveedor &&
+                                                                                    containerProfesionalServiciosRowList.any((servicio) => servicio.servicioId == e.servicioId);
+                                                                              }).toList()
                                                                                 ..sort((a, b) {
                                                                                   final porFecha = a.fecha.compareTo(b.fecha);
                                                                                   if (porFecha != 0) {
@@ -1007,54 +1082,57 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                       ].divide(SizedBox(width: 8.0)),
                                                                                                     ),
                                                                                                   ),
-                                                                                                  Padding(
-                                                                                                    padding: EdgeInsets.all(8.0),
-                                                                                                    child: Row(
-                                                                                                      mainAxisSize: MainAxisSize.max,
-                                                                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                                                      children: [
-                                                                                                        Text(
-                                                                                                          'Tu pago',
-                                                                                                          style: FlutterFlowTheme.of(context).bodyMedium.override(
-                                                                                                                font: GoogleFonts.inter(
+                                                                                                  if (serviciosentItem.finanzasVersion == 1 && serviciosentItem.profesionalId == currentUserUid)
+                                                                                                    DesgloseServicioWidget(solicitudId: serviciosentItem.id, actualizacion: '${serviciosentItem.finanzasRevision}:${serviciosentItem.estadoPago}')
+                                                                                                  else
+                                                                                                    Padding(
+                                                                                                      padding: EdgeInsets.all(8.0),
+                                                                                                      child: Row(
+                                                                                                        mainAxisSize: MainAxisSize.max,
+                                                                                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                                                        children: [
+                                                                                                          Text(
+                                                                                                            'Tu pago',
+                                                                                                            style: FlutterFlowTheme.of(context).bodyMedium.override(
+                                                                                                                  font: GoogleFonts.inter(
+                                                                                                                    fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
+                                                                                                                    fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                                  ),
+                                                                                                                  color: FlutterFlowTheme.of(context).accent3,
+                                                                                                                  fontSize: 14.0,
+                                                                                                                  letterSpacing: 0.0,
                                                                                                                   fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
                                                                                                                   fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                                                                                                                 ),
-                                                                                                                color: FlutterFlowTheme.of(context).accent3,
-                                                                                                                fontSize: 14.0,
-                                                                                                                letterSpacing: 0.0,
-                                                                                                                fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
-                                                                                                                fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                          ),
+                                                                                                          Flexible(
+                                                                                                            child: Text(
+                                                                                                              valueOrDefault<String>(
+                                                                                                                '${functions.formatPrices(serviciosentItem.importeProveedor(() => functions.calcularIngresoProveedor(valueOrDefault<double>(
+                                                                                                                      serviciosentItem.precio,
+                                                                                                                      0.0,
+                                                                                                                    ) + valueOrDefault<double>(
+                                                                                                                      serviciosentItem.precioAdicionales,
+                                                                                                                      0.0,
+                                                                                                                    ))))} COP',
+                                                                                                                '\$0 COP',
                                                                                                               ),
-                                                                                                        ),
-                                                                                                        Flexible(
-                                                                                                          child: Text(
-                                                                                                            valueOrDefault<String>(
-                                                                                                              '${functions.formatPrices(functions.calcularIngresoProveedor(valueOrDefault<double>(
-                                                                                                                    serviciosentItem.precio,
-                                                                                                                    0.0,
-                                                                                                                  ) + valueOrDefault<double>(
-                                                                                                                    serviciosentItem.precioAdicionales,
-                                                                                                                    0.0,
-                                                                                                                  )))} COP',
-                                                                                                              '\$0 COP',
-                                                                                                            ),
-                                                                                                            style: FlutterFlowTheme.of(context).bodyMedium.override(
-                                                                                                                  font: GoogleFonts.inter(
+                                                                                                              style: FlutterFlowTheme.of(context).bodyMedium.override(
+                                                                                                                    font: GoogleFonts.inter(
+                                                                                                                      fontWeight: FontWeight.w600,
+                                                                                                                      fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                                    ),
+                                                                                                                    color: Color(0xFF3D91F4),
+                                                                                                                    fontSize: 14.0,
+                                                                                                                    letterSpacing: 0.0,
                                                                                                                     fontWeight: FontWeight.w600,
                                                                                                                     fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                                                                                                                   ),
-                                                                                                                  color: Color(0xFF3D91F4),
-                                                                                                                  fontSize: 14.0,
-                                                                                                                  letterSpacing: 0.0,
-                                                                                                                  fontWeight: FontWeight.w600,
-                                                                                                                  fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
-                                                                                                                ),
+                                                                                                            ),
                                                                                                           ),
-                                                                                                        ),
-                                                                                                      ].divide(SizedBox(width: 8.0)),
+                                                                                                        ].divide(SizedBox(width: 8.0)),
+                                                                                                      ),
                                                                                                     ),
-                                                                                                  ),
                                                                                                 ],
                                                                                               ),
                                                                                             ),
@@ -1071,7 +1149,11 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                     Flexible(
                                                                                                       child: Builder(
                                                                                                         builder: (context) => FFButtonWidget(
-                                                                                                          onPressed: () async {
+                                                                                                          onPressed: usaTransicionesSprint3 && (containerUsuariosRow?.verificado != 'verificado' || _transicionesPendientes.contains(serviciosentItem.id)) ? null : () async {
+                                                                                                            if (usaTransicionesSprint3) {
+                                                                                                              await _registrarAccion(serviciosentItem, AccionSolicitud.aceptar);
+                                                                                                              return;
+                                                                                                            }
                                                                                                             await SolicitudesServicioTable().update(
                                                                                                               data: {
                                                                                                                 'estado': 'aceptadas',
@@ -1234,10 +1316,11 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                           (context) {
                                                                         final solicitudesAceptadasx = containerSolicitudesServicioRowList
                                                                             .where((e) =>
+                                                                                (!usaTransicionesSprint3 || e.profesionalId == currentUserUid) && (
                                                                                 (e.estado == 'aceptadas') ||
                                                                                 (e.estado == 'iniciadas') ||
                                                                                 (e.estado == 'en camino') ||
-                                                                                (e.estado == 'en proceso'))
+                                                                                (e.estado == 'en proceso')))
                                                                             .toList()
                                                                           // Orden descendente por fecha y hora del servicio (el más futuro primero).
                                                                           ..sort((a, b) {
@@ -1285,6 +1368,15 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                               (context, solicitudesAceptadasxIndex) {
                                                                             final solicitudesAceptadasxItem =
                                                                                 solicitudesAceptadasx[solicitudesAceptadasxIndex];
+                                                                            final usaFlujoNuevo = usaTransicionesSprint3;
+                                                                            final siguiente = usaFlujoNuevo
+                                                                                ? _siguiente(solicitudesAceptadasxItem)
+                                                                                : null;
+                                                                            final esperaDiaServicio = usaFlujoNuevo &&
+                                                                                siguiente == null &&
+                                                                                (solicitudesAceptadasxItem.estado == 'iniciadas' ||
+                                                                                    (solicitudesAceptadasxItem.estado == 'aceptadas' &&
+                                                                                        solicitudesAceptadasxItem.fechaAceptacion != null));
                                                                             return Container(
                                                                               decoration: BoxDecoration(
                                                                                 color: Color(0xFFEEECE8),
@@ -1346,7 +1438,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                   print('Button pressed ...');
                                                                                                 },
                                                                                                 text: valueOrDefault<String>(
-                                                                                                  solicitudesAceptadasxItem.estado == 'aceptadas' ? 'Activo' : 'En curso',
+                                                                                                  usaTransicionesSprint3 ? etiquetaEstadoSolicitud(solicitudesAceptadasxItem.estado) : (solicitudesAceptadasxItem.estado == 'aceptadas' ? 'Activo' : 'En curso'),
                                                                                                   'Activo',
                                                                                                 ),
                                                                                                 options: FFButtonOptions(
@@ -1354,7 +1446,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                   padding: EdgeInsetsDirectional.fromSTEB(12.0, 0.0, 12.0, 0.0),
                                                                                                   iconPadding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
                                                                                                   color: valueOrDefault<Color>(
-                                                                                                    solicitudesAceptadasxItem.estado == 'aceptadas' ? Color(0xFFCFE3FC) : Color(0xFFFFE9CC),
+                                                                                                    _estadoAzul(solicitudesAceptadasxItem.estado) ? Color(0xFFCFE3FC) : Color(0xFFFFE9CC),
                                                                                                     Color(0xFFFFE9CC),
                                                                                                   ),
                                                                                                   textStyle: FlutterFlowTheme.of(context).titleSmall.override(
@@ -1363,7 +1455,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                           fontStyle: FlutterFlowTheme.of(context).titleSmall.fontStyle,
                                                                                                         ),
                                                                                                         color: valueOrDefault<Color>(
-                                                                                                          solicitudesAceptadasxItem.estado == 'aceptadas' ? Color(0xFF0D70E7) : Color(0xFFED8600),
+                                                                                                          _estadoAzul(solicitudesAceptadasxItem.estado) ? Color(0xFF0D70E7) : Color(0xFFED8600),
                                                                                                           Color(0xFFED8600),
                                                                                                         ),
                                                                                                         fontSize: 16.0,
@@ -1374,7 +1466,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                   elevation: 0.0,
                                                                                                   borderSide: BorderSide(
                                                                                                     color: valueOrDefault<Color>(
-                                                                                                      solicitudesAceptadasxItem.estado == 'aceptadas' ? Color(0xFF0D70E7) : Color(0xFFED8600),
+                                                                                                      _estadoAzul(solicitudesAceptadasxItem.estado) ? Color(0xFF0D70E7) : Color(0xFFED8600),
                                                                                                       Color(0xFFED8600),
                                                                                                     ),
                                                                                                     width: 1.0,
@@ -1508,7 +1600,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                   Flexible(
                                                                                                     child: Text(
                                                                                                       valueOrDefault<String>(
-                                                                                                        solicitudesAceptadasxItem.informacionAdicional,
+                                                                                                        solicitudesAceptadasxItem.descripcion,
                                                                                                         '-',
                                                                                                       ),
                                                                                                       textAlign: TextAlign.end,
@@ -1674,57 +1766,60 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                 ].divide(SizedBox(width: 8.0)),
                                                                                               ),
                                                                                             ),
-                                                                                            Padding(
-                                                                                              padding: EdgeInsets.all(8.0),
-                                                                                              child: Row(
-                                                                                                mainAxisSize: MainAxisSize.max,
-                                                                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                                                                children: [
-                                                                                                  Text(
-                                                                                                    'Tu pago',
-                                                                                                    style: FlutterFlowTheme.of(context).bodyMedium.override(
-                                                                                                          font: GoogleFonts.inter(
+                                                                                            if (solicitudesAceptadasxItem.finanzasVersion == 1)
+                                                                                              DesgloseServicioWidget(solicitudId: solicitudesAceptadasxItem.id, actualizacion: '${solicitudesAceptadasxItem.finanzasRevision}:${solicitudesAceptadasxItem.estadoPago}')
+                                                                                            else
+                                                                                              Padding(
+                                                                                                padding: EdgeInsets.all(8.0),
+                                                                                                child: Row(
+                                                                                                  mainAxisSize: MainAxisSize.max,
+                                                                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                                                                  children: [
+                                                                                                    Text(
+                                                                                                      'Tu pago',
+                                                                                                      style: FlutterFlowTheme.of(context).bodyMedium.override(
+                                                                                                            font: GoogleFonts.inter(
+                                                                                                              fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
+                                                                                                              fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                            ),
+                                                                                                            color: FlutterFlowTheme.of(context).accent3,
+                                                                                                            fontSize: 16.0,
+                                                                                                            letterSpacing: 0.0,
                                                                                                             fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
                                                                                                             fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                                                                                                           ),
-                                                                                                          color: FlutterFlowTheme.of(context).accent3,
-                                                                                                          fontSize: 16.0,
-                                                                                                          letterSpacing: 0.0,
-                                                                                                          fontWeight: FlutterFlowTheme.of(context).bodyMedium.fontWeight,
-                                                                                                          fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                    ),
+                                                                                                    Flexible(
+                                                                                                      child: Text(
+                                                                                                        valueOrDefault<String>(
+                                                                                                          '${valueOrDefault<String>(
+                                                                                                            formatNumber(
+                                                                                                              solicitudesAceptadasxItem.importeProveedor(() => functions.calcularIngresoProveedor(solicitudesAceptadasxItem.precio + (solicitudesAceptadasxItem.precioAdicionales ?? 0.0))),
+                                                                                                              formatType: FormatType.custom,
+                                                                                                              currency: '\$',
+                                                                                                              format: '',
+                                                                                                              locale: '',
+                                                                                                            ),
+                                                                                                            '\$0',
+                                                                                                          )} COP',
+                                                                                                          '\$0 COP',
                                                                                                         ),
-                                                                                                  ),
-                                                                                                  Flexible(
-                                                                                                    child: Text(
-                                                                                                      valueOrDefault<String>(
-                                                                                                        '${valueOrDefault<String>(
-                                                                                                          formatNumber(
-                                                                                                            functions.calcularIngresoProveedor(solicitudesAceptadasxItem.precio + (solicitudesAceptadasxItem.precioAdicionales ?? 0.0)),
-                                                                                                            formatType: FormatType.custom,
-                                                                                                            currency: '\$',
-                                                                                                            format: '',
-                                                                                                            locale: '',
-                                                                                                          ),
-                                                                                                          '\$0',
-                                                                                                        )} COP',
-                                                                                                        '\$0 COP',
-                                                                                                      ),
-                                                                                                      style: FlutterFlowTheme.of(context).bodyMedium.override(
-                                                                                                            font: GoogleFonts.inter(
+                                                                                                        style: FlutterFlowTheme.of(context).bodyMedium.override(
+                                                                                                              font: GoogleFonts.inter(
+                                                                                                                fontWeight: FontWeight.w600,
+                                                                                                                fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
+                                                                                                              ),
+                                                                                                              color: Color(0xFF3D91F4),
+                                                                                                              fontSize: 16.0,
+                                                                                                              letterSpacing: 0.0,
                                                                                                               fontWeight: FontWeight.w600,
                                                                                                               fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
                                                                                                             ),
-                                                                                                            color: Color(0xFF3D91F4),
-                                                                                                            fontSize: 16.0,
-                                                                                                            letterSpacing: 0.0,
-                                                                                                            fontWeight: FontWeight.w600,
-                                                                                                            fontStyle: FlutterFlowTheme.of(context).bodyMedium.fontStyle,
-                                                                                                          ),
+                                                                                                      ),
                                                                                                     ),
-                                                                                                  ),
-                                                                                                ].divide(SizedBox(width: 8.0)),
+                                                                                                  ].divide(SizedBox(width: 8.0)),
+                                                                                                ),
                                                                                               ),
-                                                                                            ),
                                                                                           ],
                                                                                         ),
                                                                                       ),
@@ -2039,128 +2134,132 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                           ].divide(SizedBox(width: 8.0)),
                                                                                         ),
                                                                                         SizedBox(height: 8.0),
+                                                                                        if (usaTransicionesSprint3 && solicitudesAceptadasxItem.estado == 'aceptadas' && solicitudesAceptadasxItem.fechaAceptacion == null)
+                                                                                          const Text('La aceptación anterior requiere revisión del equipo.'),
+                                                                                        if (!usaFlujoNuevo || siguiente != null || esperaDiaServicio)
                                                                                         SizedBox(
                                                                                           width: double.infinity,
                                                                                           child: Builder(
-                                                                                                  builder: (context) => FFButtonWidget(
-                                                                                                    onPressed: () async {
-                                                                                                      if (solicitudesAceptadasxItem.estado == 'aceptadas') {
-                                                                                                        await SolicitudesServicioTable().update(
-                                                                                                          data: {
-                                                                                                            'estado': 'iniciadas',
-                                                                                                          },
-                                                                                                          matchingRows: (rows) => rows.eqOrNull(
-                                                                                                            'id',
-                                                                                                            solicitudesAceptadasxItem.id,
-                                                                                                          ),
-                                                                                                        );
-                                                                                                        _model.apiResultwgo = await SendNotificationUserCall.call(
-                                                                                                          userIdSupabase: solicitudesAceptadasxItem.usuarioId,
-                                                                                                          title: 'Solicitud iniciada',
-                                                                                                          message: 'Tu solicitud ha sido iniciada',
-                                                                                                        );
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'iniciadas') {
-                                                                                                        await SolicitudesServicioTable().update(
-                                                                                                          data: {
-                                                                                                            'estado': 'en camino',
-                                                                                                          },
-                                                                                                          matchingRows: (rows) => rows.eqOrNull(
-                                                                                                            'id',
-                                                                                                            solicitudesAceptadasxItem.id,
-                                                                                                          ),
-                                                                                                        );
-                                                                                                        _model.apiResult3 = await SendNotificationUserCall.call(
-                                                                                                          userIdSupabase: solicitudesAceptadasxItem.usuarioId,
-                                                                                                          title: 'Solicitud en camino',
-                                                                                                          message: 'Tu solicitud esta en camino',
-                                                                                                        );
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'en camino') {
-                                                                                                        await SolicitudesServicioTable().update(
-                                                                                                          data: {
-                                                                                                            'estado': 'en proceso',
-                                                                                                          },
-                                                                                                          matchingRows: (rows) => rows.eqOrNull(
-                                                                                                            'id',
-                                                                                                            solicitudesAceptadasxItem.id,
-                                                                                                          ),
-                                                                                                        );
-                                                                                                        _model.apiResult4 = await SendNotificationUserCall.call(
-                                                                                                          userIdSupabase: solicitudesAceptadasxItem.usuarioId,
-                                                                                                          title: 'Solicitud en proceso',
-                                                                                                          message: 'Tu solicitud esta en proceso',
-                                                                                                        );
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'en proceso') {
-                                                                                                        await showDialog(
-                                                                                                          context: context,
-                                                                                                          builder: (dialogContext) {
-                                                                                                            return Dialog(
-                                                                                                              elevation: 0,
-                                                                                                              insetPadding: EdgeInsets.zero,
-                                                                                                              backgroundColor: Colors.transparent,
-                                                                                                              alignment: AlignmentDirectional(0.0, 0.0).resolve(Directionality.of(context)),
-                                                                                                              child: GestureDetector(
-                                                                                                                onTap: () {
-                                                                                                                  FocusScope.of(dialogContext).unfocus();
-                                                                                                                  FocusManager.instance.primaryFocus?.unfocus();
-                                                                                                                },
-                                                                                                                child: FinalizarServicioWidget(
-                                                                                                                  idservicio: solicitudesAceptadasxItem.id,
-                                                                                                                ),
-                                                                                                              ),
-                                                                                                            );
-                                                                                                          },
-                                                                                                        );
-                                                                                                      }
-
-                                                                                                      safeSetState(() {});
+                                                                                            builder: (context) => FFButtonWidget(
+                                                                                              onPressed: esperaDiaServicio || (usaFlujoNuevo && _transicionesPendientes.contains(solicitudesAceptadasxItem.id)) ? null : () async {
+                                                                                                if (usaTransicionesSprint3) {
+                                                                                                  final accion = _siguiente(solicitudesAceptadasxItem);
+                                                                                                  if (accion == AccionSolicitud.termine) {
+                                                                                                    await _abrirCierre(context, solicitudesAceptadasxItem.id);
+                                                                                                  } else if (accion != null) {
+                                                                                                    await _registrarAccion(solicitudesAceptadasxItem, accion);
+                                                                                                  }
+                                                                                                  return;
+                                                                                                }
+                                                                                                if (solicitudesAceptadasxItem.estado == 'aceptadas') {
+                                                                                                  await SolicitudesServicioTable().update(
+                                                                                                    data: {
+                                                                                                      'estado': 'iniciadas',
                                                                                                     },
-                                                                                                    text: () {
-                                                                                                      if (solicitudesAceptadasxItem.estado == 'aceptadas') {
-                                                                                                        return 'Iniciar servicio';
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'iniciadas') {
-                                                                                                        return 'Me encuentro en camino';
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'en camino') {
-                                                                                                        return 'El servicio ha comenzado';
-                                                                                                      } else if (solicitudesAceptadasxItem.estado == 'en proceso') {
-                                                                                                        return 'Finalizar servicio';
-                                                                                                      } else {
-                                                                                                        return 'Iniciar servicio';
-                                                                                                      }
-                                                                                                    }(),
-                                                                                                    icon: Icon(
-                                                                                                      Icons.check,
-                                                                                                      size: 16.0,
+                                                                                                    matchingRows: (rows) => rows.eqOrNull(
+                                                                                                      'id',
+                                                                                                      solicitudesAceptadasxItem.id,
                                                                                                     ),
-                                                                                                    options: FFButtonOptions(
-                                                                                                      height: 48.0,
-                                                                                                      padding: EdgeInsetsDirectional.fromSTEB(12.0, 0.0, 12.0, 0.0),
-                                                                                                      textAlign: TextAlign.center,
-                                                                                                      maxLines: 2,
-                                                                                                      iconAlignment: IconAlignment.end,
-                                                                                                      iconPadding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
-                                                                                                      iconColor: FlutterFlowTheme.of(context).success,
-                                                                                                      color: FlutterFlowTheme.of(context).secondaryBackground,
-                                                                                                      textStyle: FlutterFlowTheme.of(context).titleSmall.override(
-                                                                                                            font: GoogleFonts.interTight(
-                                                                                                              fontWeight: FontWeight.w600,
-                                                                                                              fontStyle: FlutterFlowTheme.of(context).titleSmall.fontStyle,
-                                                                                                            ),
-                                                                                                            color: FlutterFlowTheme.of(context).success,
-                                                                                                            fontSize: 12.0,
-                                                                                                            letterSpacing: 0.0,
-                                                                                                            fontWeight: FontWeight.w600,
-                                                                                                            fontStyle: FlutterFlowTheme.of(context).titleSmall.fontStyle,
-                                                                                                          ),
-                                                                                                      elevation: 0.0,
-                                                                                                      borderSide: BorderSide(
-                                                                                                        color: FlutterFlowTheme.of(context).success,
-                                                                                                        width: 1.0,
+                                                                                                  );
+                                                                                                  _model.apiResultwgo = await SendNotificationUserCall.call(
+                                                                                                    userIdSupabase: solicitudesAceptadasxItem.usuarioId,
+                                                                                                    title: 'Solicitud iniciada',
+                                                                                                    message: 'Tu solicitud ha sido iniciada',
+                                                                                                  );
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'iniciadas') {
+                                                                                                  await SolicitudesServicioTable().update(
+                                                                                                    data: {
+                                                                                                      'estado': 'en camino',
+                                                                                                    },
+                                                                                                    matchingRows: (rows) => rows.eqOrNull(
+                                                                                                      'id',
+                                                                                                      solicitudesAceptadasxItem.id,
+                                                                                                    ),
+                                                                                                  );
+                                                                                                  _model.apiResult3 = await SendNotificationUserCall.call(
+                                                                                                    userIdSupabase: solicitudesAceptadasxItem.usuarioId,
+                                                                                                    title: 'Solicitud en camino',
+                                                                                                    message: 'Tu solicitud esta en camino',
+                                                                                                  );
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'en camino') {
+                                                                                                  await SolicitudesServicioTable().update(
+                                                                                                    data: {
+                                                                                                      'estado': 'en proceso',
+                                                                                                    },
+                                                                                                    matchingRows: (rows) => rows.eqOrNull(
+                                                                                                      'id',
+                                                                                                      solicitudesAceptadasxItem.id,
+                                                                                                    ),
+                                                                                                  );
+                                                                                                  _model.apiResult4 = await SendNotificationUserCall.call(
+                                                                                                    userIdSupabase: solicitudesAceptadasxItem.usuarioId,
+                                                                                                    title: 'Solicitud en proceso',
+                                                                                                    message: 'Tu solicitud esta en proceso',
+                                                                                                  );
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'en proceso') {
+                                                                                                  await _abrirCierre(context, solicitudesAceptadasxItem.id);
+                                                                                                }
+
+                                                                                                safeSetState(() {});
+                                                                                              },
+                                                                                              text: () {
+                                                                                                if (usaFlujoNuevo) return (siguiente ?? AccionSolicitud.enCamino).boton;
+                                                                                                if (solicitudesAceptadasxItem.estado == 'aceptadas') {
+                                                                                                  return 'Iniciar servicio';
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'iniciadas') {
+                                                                                                  return 'Me encuentro en camino';
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'en camino') {
+                                                                                                  return 'El servicio ha comenzado';
+                                                                                                } else if (solicitudesAceptadasxItem.estado == 'en proceso') {
+                                                                                                  return 'Finalizar servicio';
+                                                                                                } else {
+                                                                                                  return 'Iniciar servicio';
+                                                                                                }
+                                                                                              }(),
+                                                                                              icon: Icon(
+                                                                                                esperaDiaServicio ? Icons.schedule : Icons.check,
+                                                                                                size: 16.0,
+                                                                                              ),
+                                                                                              options: FFButtonOptions(
+                                                                                                height: 48.0,
+                                                                                                padding: EdgeInsetsDirectional.fromSTEB(12.0, 0.0, 12.0, 0.0),
+                                                                                                textAlign: TextAlign.center,
+                                                                                                maxLines: 2,
+                                                                                                iconAlignment: IconAlignment.end,
+                                                                                                iconPadding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 0.0),
+                                                                                                iconColor: FlutterFlowTheme.of(context).success,
+                                                                                                color: FlutterFlowTheme.of(context).secondaryBackground,
+                                                                                                textStyle: FlutterFlowTheme.of(context).titleSmall.override(
+                                                                                                      font: GoogleFonts.interTight(
+                                                                                                        fontWeight: FontWeight.w600,
+                                                                                                        fontStyle: FlutterFlowTheme.of(context).titleSmall.fontStyle,
                                                                                                       ),
-                                                                                                      borderRadius: BorderRadius.circular(8.0),
+                                                                                                      color: FlutterFlowTheme.of(context).success,
+                                                                                                      fontSize: 12.0,
+                                                                                                      letterSpacing: 0.0,
+                                                                                                      fontWeight: FontWeight.w600,
+                                                                                                      fontStyle: FlutterFlowTheme.of(context).titleSmall.fontStyle,
                                                                                                     ),
-                                                                                                  ),
+                                                                                                disabledColor: FlutterFlowTheme.of(context).alternate,
+                                                                                                disabledTextColor: FlutterFlowTheme.of(context).secondaryText,
+                                                                                                elevation: 0.0,
+                                                                                                borderSide: BorderSide(
+                                                                                                  color: esperaDiaServicio ? FlutterFlowTheme.of(context).alternate : FlutterFlowTheme.of(context).success,
+                                                                                                  width: 1.0,
+                                                                                                ),
+                                                                                                borderRadius: BorderRadius.circular(8.0),
+                                                                                              ),
+                                                                                            ),
+                                                                                          ),
                                                                                         ),
-                                                                                        ),
+                                                                                        if (esperaDiaServicio)
+                                                                                          Padding(
+                                                                                            padding: const EdgeInsets.only(top: 8.0),
+                                                                                            child: Text(
+                                                                                              'Disponible únicamente el día del servicio.',
+                                                                                              style: FlutterFlowTheme.of(context).bodySmall,
+                                                                                            ),
+                                                                                          ),
                                                                                       ],
                                                                                     ),
                                                                                   ],
@@ -2264,7 +2363,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                             Builder(
                                                                           builder:
                                                                               (context) {
-                                                                            final serviciosFinalizados = containerSolicitudesServicioRowList.where((e) => (e.estado == 'finalizadas') || (e.estado == 'canceladas')).toList()
+                                                                            final serviciosFinalizados = containerSolicitudesServicioRowList.where((e) => (!usaTransicionesSprint3 || e.profesionalId == currentUserUid) && (e.estado == 'finalizadas' || e.estado == 'canceladas' || (usaTransicionesSprint3 && e.estado == 'cancelada'))).toList()
                                                                               // Orden descendente por fecha y hora del servicio (el más reciente primero).
                                                                               ..sort((a, b) {
                                                                                 final porFecha = b.fecha.compareTo(a.fecha);
@@ -2351,7 +2450,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                                     ),
                                                                                                   ),
                                                                                                   Text(
-                                                                                                    '\$${functions.formatPrices(functions.calcularIngresoProveedor(serviciosFinalizadosItem.precio + (serviciosFinalizadosItem.precioAdicionales ?? 0.0)))} COP',
+                                                                                                    '\$${functions.formatPrices(serviciosFinalizadosItem.importeProveedor(() => functions.calcularIngresoProveedor(serviciosFinalizadosItem.precio + (serviciosFinalizadosItem.precioAdicionales ?? 0.0))))} COP',
                                                                                                     style: FlutterFlowTheme.of(context).bodyMedium.override(
                                                                                                           font: GoogleFonts.inter(
                                                                                                             fontWeight: FontWeight.w600,
@@ -2369,6 +2468,7 @@ class _SolicitudesWidgetState extends State<SolicitudesWidget> {
                                                                                             ),
                                                                                           ),
                                                                                         ),
+                                                                                        if (serviciosFinalizadosItem.finanzasVersion == 1) DesgloseServicioWidget(solicitudId: serviciosFinalizadosItem.id, actualizacion: '${serviciosFinalizadosItem.finanzasRevision}:${serviciosFinalizadosItem.estadoPago}'),
                                                                                         Padding(
                                                                                           padding: EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 0.0, 8.0),
                                                                                           child: Container(

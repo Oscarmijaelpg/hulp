@@ -37,6 +37,7 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
   // neteado con calcularIngresoProveedor) para que la tarjeta y el gráfico
   // muestren cifras coherentes.
   double? _ingresosSemanaActual;
+  double _saldoTransferirSemana = 0;
   StreamSubscription<List<Map<String, dynamic>>>? _solicitudesSub;
   bool _primeraEmisionStream = true;
 
@@ -49,19 +50,17 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
     // Tiempo real: recalcula al cambiar las solicitudes del proveedor
     // (p. ej. al finalizar un servicio). Realtime no emite sobre vistas, por
     // eso se escucha la tabla base.
-    _solicitudesSub = SupaFlow.client
-        .from('solicitudes_servicio')
-        .stream(primaryKey: ['id'])
+    _solicitudesSub = SupaFlow.solicitudesStream()
         .eq('profesional_id', currentUserUid)
         .listen((_) {
-          if (_primeraEmisionStream) {
-            _primeraEmisionStream = false;
-            return;
-          }
-          if (mounted) {
-            _cargarIngresosSemana();
-          }
-        });
+      if (_primeraEmisionStream) {
+        _primeraEmisionStream = false;
+        return;
+      }
+      if (mounted) {
+        _cargarIngresosSemana();
+      }
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) => safeSetState(() {}));
   }
@@ -79,13 +78,16 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
 
       final response = await SupaFlow.client
           .from('solicitudes_servicio')
-          .select('precio_base, precio_adicionales, precio')
+          .select(SupaFlow.finanzasV1Habilitadas
+              ? 'precio_base, precio_adicionales, precio, finanzas_version, pago_proveedor, saldo_transferir'
+              : 'precio_base, precio_adicionales, precio')
           .eq('profesional_id', currentUserUid)
           .eq('estado', 'finalizadas')
           .gte('fecha', fechaInicio)
           .lte('fecha', fechaFin);
 
       double total = 0;
+      double saldo = 0;
       for (var item in response) {
         // El 72% se aplica sobre el total que paga el cliente, adicionales
         // incluidos: antes los adicionales se sumaban enteros.
@@ -94,10 +96,17 @@ class _DesempenioPageWidgetState extends State<DesempenioPageWidget> {
             0;
         final adicionales =
             double.tryParse((item['precio_adicionales'] ?? 0).toString()) ?? 0;
-        total += functions.calcularIngresoProveedor(base + adicionales);
+        if (item['finanzas_version'] == 1)
+          saldo += (item['saldo_transferir'] as num).toDouble();
+        total += item['finanzas_version'] == null
+            ? functions.calcularIngresoProveedor(base + adicionales)
+            : (item['pago_proveedor'] as num).toDouble();
       }
       if (mounted) {
-        safeSetState(() => _ingresosSemanaActual = total);
+        safeSetState(() {
+          _ingresosSemanaActual = total;
+          _saldoTransferirSemana = saldo;
+        });
       }
     } catch (e) {
       // Silencioso: ante un fallo se conserva el último valor mostrado.

@@ -1,3 +1,4 @@
+import { confirmarFinanzasV1, prepararCobroWompiV1 } from './finanzas_v1.ts';
 // ============================================================================
 // Wompi del lado del servidor.
 //
@@ -37,7 +38,7 @@
 // comprueba a mano y de forma explicita: RLS no protege aqui.
 // ============================================================================
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.0';
 import {
   sha256Hex,
   cadenaDeFirma,
@@ -149,7 +150,9 @@ async function registrarIntento(
   fila: Record<string, unknown>,
 ): Promise<void> {
   try {
-    const { error: errIntento } = await admin.from('intentos_cobro').insert(fila);
+    const { error: errIntento } = fila.id
+      ? await admin.from('intentos_cobro').upsert(fila, { onConflict: 'id' })
+      : await admin.from('intentos_cobro').insert(fila);
     if (errIntento) console.error('No se pudo registrar el intento:', errIntento);
   } catch (e) {
     console.error('No se pudo registrar el intento:', e);
@@ -281,7 +284,7 @@ Deno.serve(async (req) => {
 
       const { data: solicitud, error: errSol } = await admin
         .from('solicitudes_servicio')
-        .select('id, ticket, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago')
+        .select('id, ticket, usuario_id, profesional_id, precio, precio_base, precio_adicionales, estado_pago, finanzas_version, finanzas_revision')
         .eq('id', solicitud_id)
         .maybeSingle();
       if (errSol) {
@@ -338,7 +341,7 @@ Deno.serve(async (req) => {
         return await rechazar('Esta solicitud ya figura pagada', 409, { estado_pago: solicitud.estado_pago });
       }
 
-      const montoEnCentavos = totalDelRecibo !== null
+      let montoEnCentavos = totalDelRecibo !== null
         ? centavosDeRecibo(totalDelRecibo)
         : centavosDeLaSolicitud(solicitud);
       baseIntento.monto_centavos = montoEnCentavos;
@@ -354,8 +357,21 @@ Deno.serve(async (req) => {
       // mantiene el formato que ya usaban admin y talento.
       const referencia = `${recibo_id ?? solicitud.id}-${Date.now()}`;
 
+      let revisionFinanciera: number | null = null;
+
       // --- transferencia Bancolombia, sin fuente de pago guardada ---
       if (accion === 'crear_cobro_bancolombia') {
+        if (solicitud.finanzas_version === 1) {
+          const { data: importe, error: importeError } = await prepararCobroWompiV1(admin, {
+            p_actor: user.id, p_id: solicitud.id, p_recibo: recibo_id ?? null,
+            p_revision: cuerpo.finanzas_revision ?? null, p_centavos: cuerpo.monto_cotizado_centavos ?? null,
+          });
+          if (importeError) return await rechazar(importeError.message, 409);
+          montoEnCentavos = Number(importe.centavos);
+          revisionFinanciera = Number(importe.revision);
+          if (!Number.isSafeInteger(montoEnCentavos) || montoEnCentavos < 150000) return await rechazar('El monto mínimo de pago es $1.500 COP.', 422);
+          baseIntento.id = importe.intento_id; baseIntento.monto_centavos = montoEnCentavos;
+        }
         // El codigo actual no manda signature en este flujo. Se replica tal
         // cual: anadirla ahora cambiaria el comportamiento de un camino que
         // no se puede probar sin una cuenta de Bancolombia de verdad.
@@ -382,12 +398,13 @@ Deno.serve(async (req) => {
         console.log(`Transferencia creada ${t.id} · solicitud ${solicitud.id} · ${montoEnCentavos}`);
         await registrarIntento(admin, {
           ...baseIntento,
-          resultado: t.status === 'APPROVED' ? 'aprobado' : 'pendiente',
+          resultado: t.status === 'APPROVED' && revisionFinanciera === null ? 'aprobado' : 'pendiente',
           wompi_status: t.status ?? null,
           wompi_mensaje: t.status_message ?? null,
           wompi_transaction_id: t.id ?? null,
-          detalle: t,
+          detalle: revisionFinanciera === null ? t : { ...t, finanzas_revision: revisionFinanciera },
         });
+        if (revisionFinanciera !== null) await confirmarFinanzasV1(admin, user.id, solicitud.id, revisionFinanciera, recibo_id ?? null, t);
         return responder({
           success: true,
           transactionId: t.id,
@@ -419,6 +436,25 @@ Deno.serve(async (req) => {
         }
       }
 
+      if (solicitud.finanzas_version === 1) {
+        const fuenteResponse = await fetch(`${BASE_WOMPI}/payment_sources/${paymentSourceId}`, { headers: cabeceraWompi });
+        const fuente = (await fuenteResponse.json()).data;
+        if (!fuenteResponse.ok || !fuente?.type) return await rechazar('No se pudo verificar el método de pago', 422);
+        const { data: importe, error: errorImporte } = await prepararCobroWompiV1(admin, {
+          p_actor: user.id, p_id: solicitud.id, p_recibo: recibo_id ?? null,
+            p_revision: cuerpo.finanzas_revision ?? null, p_centavos: cuerpo.monto_cotizado_centavos ?? null,
+        });
+        if (errorImporte) return await rechazar(errorImporte.message, 409);
+        montoEnCentavos = Number(importe.centavos);
+        revisionFinanciera = Number(importe.revision);
+        if (!Number.isSafeInteger(montoEnCentavos) || montoEnCentavos < 150000) {
+          return await rechazar('El monto mínimo de pago es $1.500 COP.', 422);
+        }
+        baseIntento.id = importe.intento_id;
+        baseIntento.monto_centavos = montoEnCentavos;
+        baseIntento.metodo = fuente.type;
+      }
+
       const firma = await sha256Hex(
         cadenaDeFirma(referencia, montoEnCentavos, moneda, claveIntegridad),
       );
@@ -448,13 +484,17 @@ Deno.serve(async (req) => {
       await registrarIntento(admin, {
         ...baseIntento,
         resultado: t.status === 'APPROVED'
-          ? 'aprobado'
+          ? (revisionFinanciera === null ? 'aprobado' : 'pendiente')
           : (t.status === 'DECLINED' || t.status === 'ERROR' ? 'rechazado' : 'pendiente'),
         wompi_status: t.status ?? null,
         wompi_mensaje: t.status_message ?? null,
         wompi_transaction_id: t.id ?? null,
-        detalle: t,
+        detalle: revisionFinanciera === null ? t : { ...t, finanzas_revision: revisionFinanciera },
       });
+
+      if (revisionFinanciera !== null) {
+        await confirmarFinanzasV1(admin, user.id, solicitud.id, revisionFinanciera, recibo_id ?? null, t);
+      }
 
       // Misma forma que devolvia createTransaction, para que el cliente siga
       // haciendo su polling mediante la accion consultar_transaccion.
@@ -551,6 +591,6 @@ Deno.serve(async (req) => {
     return error(`Accion desconocida: ${accion ?? '(ninguna)'}`, 400);
   } catch (e) {
     console.error('Error en la funcion wompi:', e);
-    return error('Error interno', 500);
+    return error('No se pudo completar el cobro. Consulta su estado antes de reintentar.', 500);
   }
 });

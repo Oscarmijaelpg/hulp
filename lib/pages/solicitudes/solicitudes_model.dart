@@ -1,3 +1,4 @@
+import '/backend/transiciones_solicitud.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/api_requests/api_calls.dart';
 import '/backend/schema/structs/index.dart';
@@ -44,6 +45,17 @@ class SolicitudesModel extends FlutterFlowModel<SolicitudesWidget> {
       final nombre = ficha?['ciudad']?.toString().trim() ?? '';
       if (nombre.isEmpty) return;
 
+      if (usaTransicionesSprint3) {
+        final activas = await CiudadesTable().queryRows(
+          queryFn: (q) => q.eq('activo', true),
+        );
+        final coincidencias = activas
+            .where((c) => c.nombre.trim().toLowerCase() == nombre.toLowerCase())
+            .toList();
+        ciudadIdProveedor =
+            coincidencias.length == 1 ? coincidencias.single.id : null;
+        return;
+      }
       final ciudad = await CiudadesTable().querySingleRow(
         queryFn: (q) => q.eqOrNull('nombre', nombre),
       );

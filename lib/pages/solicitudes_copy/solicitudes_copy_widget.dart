@@ -759,8 +759,7 @@ class _SolicitudesCopyWidgetState extends State<SolicitudesCopyWidget> {
                                                                                             child: Text(
                                                                                               valueOrDefault<String>(
                                                                                                 formatNumber(
-                                                                                                  valueOrDefault<double>(serviciosentItem.precio, 0.0) +
-                                                                                                      valueOrDefault<double>(serviciosentItem.precioAdicionales, 0.0),
+                                                                                                  serviciosentItem.importeProveedor(() => valueOrDefault<double>(serviciosentItem.precio, 0.0) + valueOrDefault<double>(serviciosentItem.precioAdicionales, 0.0)),
                                                                                                   formatType: FormatType.decimal,
                                                                                                   decimalType: DecimalType.periodDecimal,
                                                                                                   currency: '\$',
@@ -1272,8 +1271,7 @@ class _SolicitudesCopyWidgetState extends State<SolicitudesCopyWidget> {
                                                                                       child: Text(
                                                                                         valueOrDefault<String>(
                                                                                           formatNumber(
-                                                                                            valueOrDefault<double>(solicitudesAceptadasListItem.precio, 0.0) +
-                                                                                                valueOrDefault<double>(solicitudesAceptadasListItem.precioAdicionales, 0.0),
+                                                                                            solicitudesAceptadasListItem.importeProveedor(() => valueOrDefault<double>(solicitudesAceptadasListItem.precio, 0.0) + valueOrDefault<double>(solicitudesAceptadasListItem.precioAdicionales, 0.0)),
                                                                                             formatType: FormatType.custom,
                                                                                             currency: '\$',
                                                                                             format: '',
@@ -1845,9 +1843,7 @@ class _SolicitudesCopyWidgetState extends State<SolicitudesCopyWidget> {
                                                                                       ),
                                                                                       Flexible(
                                                                                         child: Text(
-                                                                                          (valueOrDefault<double>(serviciosEntrantesListItem.precio, 0.0) +
-                                                                                                  valueOrDefault<double>(serviciosEntrantesListItem.precioAdicionales, 0.0))
-                                                                                              .toString(),
+                                                                                          (serviciosEntrantesListItem.importeProveedor(() => valueOrDefault<double>(serviciosEntrantesListItem.precio, 0.0) + valueOrDefault<double>(serviciosEntrantesListItem.precioAdicionales, 0.0))).toString(),
                                                                                           style: FlutterFlowTheme.of(context).bodyMedium.override(
                                                                                                 font: GoogleFonts.inter(
                                                                                                   fontWeight: FontWeight.w600,

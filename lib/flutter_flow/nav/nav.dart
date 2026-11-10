@@ -6,6 +6,7 @@ import 'package:page_transition/page_transition.dart';
 import 'package:provider/provider.dart';
 
 import '/backend/schema/structs/index.dart';
+import '/backend/transiciones_solicitud.dart';
 
 import '/backend/supabase/supabase.dart';
 
@@ -236,7 +237,9 @@ GoRouter createRouter(AppStateNotifier appStateNotifier) => GoRouter(
         FFRoute(
           name: SolicitudesCopyWidget.routeName,
           path: SolicitudesCopyWidget.routePath,
-          builder: (context, params) => SolicitudesCopyWidget(),
+          builder: (context, params) => usaTransicionesSprint3
+              ? SolicitudesWidget()
+              : SolicitudesCopyWidget(),
         ),
         FFRoute(
           name: ChatWidget.routeName,

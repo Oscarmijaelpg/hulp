@@ -1,3 +1,5 @@
+import '/backend/transiciones_solicitud.dart';
+import '/backend/consultar_cobro_cliente.dart';
 import '/auth/supabase_auth/auth_util.dart';
 import '/backend/api_requests/api_calls.dart';
 import '/backend/supabase/supabase.dart';
@@ -50,26 +52,34 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
         _avisar('La solicitud no existe o ya no está asignada a ti.');
         return;
       }
-      final finalizadas = await SolicitudesServicioTable().update(
-        data: {'estado': 'finalizadas'},
-        matchingRows: (rows) => rows
-            .eqOrNull('id', solicitud.id)
-            .eqOrNull('profesional_id', currentUserUid),
-        returnRows: true,
-      );
-      if (finalizadas.isEmpty) {
-        _avisar('La solicitud ya no está asignada a ti. No se realizó un cobro.');
-        return;
-      }
-      final resultado = await _cobrarAlFinalizar(solicitud);
-      try {
-        await SendNotificationUserHulpCall.call(
-          userIdSupabase: solicitud.usuarioId,
-          title: 'Tu solicitud ha sido finalizada',
-          message: 'Haz click aqui',
+      var nueva = true;
+      if (usaTransicionesSprint3) {
+        nueva = await transicionarSolicitud(solicitud.id, AccionSolicitud.termine);
+      } else {
+        final finalizadas = await SolicitudesServicioTable().update(
+          data: {'estado': 'finalizadas'},
+          matchingRows: (rows) => rows
+              .eqOrNull('id', solicitud.id)
+              .eqOrNull('profesional_id', currentUserUid),
+          returnRows: true,
         );
-      } catch (_) {
-        // La notificación no revierte la finalización ni el pago.
+        if (finalizadas.isEmpty) {
+          _avisar(
+              'La solicitud ya no está asignada a ti. No se realizó un cobro.');
+          return;
+        }
+      }
+      final resultado = nueva ? await _cobrarAlFinalizar(solicitud) : '';
+      if (nueva) {
+        try {
+          await SendNotificationUserHulpCall.call(
+            userIdSupabase: solicitud.usuarioId,
+            title: 'Tu solicitud ha sido finalizada',
+            message: 'Haz click aqui',
+          );
+        } catch (_) {
+          // La notificación no revierte la finalización ni el pago.
+        }
       }
       if (!mounted) return;
       _avisar(resultado.isEmpty
@@ -77,7 +87,9 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
           : 'Servicio finalizado. $resultado');
       Navigator.pop(context);
     } catch (e) {
-      _avisar('No se pudo finalizar el servicio: $e');
+      _avisar(usaTransicionesSprint3
+          ? mensajeTransicionSolicitud(e)
+          : 'No se pudo finalizar el servicio: $e');
     } finally {
       if (mounted) setState(() => _finalizando = false);
     }
@@ -128,6 +140,10 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
         return 'No se realizó un cobro: el método de pago no es válido. '
             'Se conservó el estado del pago.';
       }
+      if (!mounted) return 'No se realizó el cobro.';
+      final cotizacion = await consultarCobroCliente(context,
+          solicitudId: solicitud.id, fuente: fuente);
+      if (cotizacion == null) return 'No se realizó el cobro.';
       final tokens = await actions.getAcceptanceToken(
         FFDevEnvironmentValues().publicKey,
         FFDevEnvironmentValues().isProduction,
@@ -140,15 +156,21 @@ class _FinalizarServicioWidgetState extends State<FinalizarServicioWidget> {
         FFDevEnvironmentValues().publicKey,
         fuente,
         tokens['acceptanceToken']?.toString() ?? '',
-        (((solicitud.precioBase ?? solicitud.precio) +
-                    (solicitud.precioAdicionales ?? 0)) *
-                100)
-            .round(),
+        solicitud.finanzasVersion == 1
+            ? 0
+            : (((solicitud.precioBase ?? solicitud.precio) +
+                        (solicitud.precioAdicionales ?? 0)) *
+                    100)
+                .round(),
         'COP',
         '', // El backend obtiene el correo del cliente.
         '${solicitud.id}-${DateTime.now().millisecondsSinceEpoch}',
         FFDevEnvironmentValues().integrityKey,
         FFDevEnvironmentValues().isProduction,
+        revisionFinanciera: (cotizacion['revision'] as num?)?.toInt(),
+        montoCotizado: cotizacion['monto'] == null
+            ? null
+            : ((cotizacion['monto'] as num) * 100).round(),
         personalDataAuthToken:
             tokens['personalDataAuthToken']?.toString() ?? '',
       );

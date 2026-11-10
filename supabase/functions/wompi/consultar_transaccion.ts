@@ -1,4 +1,5 @@
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { confirmarFinanzasV1 } from './finanzas_v1.ts';
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.119.0';
 
 type Responder = (cuerpo: unknown, status?: number) => Response;
 type ResponderError = (
@@ -46,7 +47,7 @@ export async function consultarTransaccion(
   // El ID debe estar vinculado a una solicitud registrada en el backend.
   const { data: intentos, error: errIntento } = await admin
     .from('intentos_cobro')
-    .select('solicitud_id')
+    .select('solicitud_id,recibo_id,detalle,monto_centavos')
     .eq('wompi_transaction_id', transactionId)
     .limit(1);
 
@@ -119,6 +120,19 @@ export async function consultarTransaccion(
   const t = datos?.data;
   if (!t || t.id !== transactionId || typeof t.status !== 'string') {
     return error('Wompi devolvió una respuesta inválida', 502);
+  }
+
+  const revision = intentos?.[0]?.detalle?.finanzas_revision;
+  if (revision != null) {
+    try {
+      await confirmarFinanzasV1(admin, usuarioId, solicitudId, Number(revision), intentos?.[0]?.recibo_id ?? null, t);
+    } catch (e) {
+      return error('Wompi aprobó el pago, pero su registro requiere revisión. No realices otro cobro.', 409);
+    }
+    if (['DECLINED', 'ERROR', 'VOIDED'].includes(t.status)) {
+      await admin.from('intentos_cobro').update({ resultado: 'rechazado', wompi_status: t.status })
+        .eq('wompi_transaction_id', t.id);
+    }
   }
 
   // success significa consulta exitosa; solo APPROVED acredita aprobación.
