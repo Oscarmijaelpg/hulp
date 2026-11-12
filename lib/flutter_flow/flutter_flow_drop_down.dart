@@ -12,6 +12,7 @@ class FlutterFlowDropDown<T> extends StatefulWidget {
     this.searchHintText,
     required this.options,
     this.optionLabels,
+    this.selectedMaxLines = 1,
     this.onChanged,
     this.onMultiSelectChanged,
     this.icon,
@@ -55,6 +56,7 @@ class FlutterFlowDropDown<T> extends StatefulWidget {
   final String? searchHintText;
   final List<T> options;
   final List<String>? optionLabels;
+  final int selectedMaxLines;
   final Function(T?)? onChanged;
   final Function(List<T>?)? onMultiSelectChanged;
   final Widget? icon;
@@ -323,7 +325,7 @@ class _FlutterFlowDropDownState<T> extends State<FlutterFlowDropDown<T>> {
                           .join(', ')
                       : optionLabels[item]!,
                   style: widget.textStyle,
-                  maxLines: 1,
+                  maxLines: widget.selectedMaxLines,
                 )),
           )
           .toList(),

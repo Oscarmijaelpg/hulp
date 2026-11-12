@@ -105,7 +105,6 @@ class _ServiceBookingFormState extends State<ServiceBookingFormPage> {
                   .push<DireccionGuardada>(MaterialPageRoute(
                       builder: (_) => AgregarDireccionAgendaPage(
                           ciudades: ciudades,
-                          ciudadInicial: _selectedCiudad,
                           guardar: _direcciones.guardar))),
             )),
       );

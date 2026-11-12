@@ -12,9 +12,11 @@ class MenuBarWidget extends StatefulWidget {
   const MenuBarWidget({
     super.key,
     required this.index,
+    this.resaltarCuenta = false,
   });
 
   final int? index;
+  final bool resaltarCuenta;
 
   @override
   State<MenuBarWidget> createState() => _MenuBarWidgetState();
@@ -56,17 +58,21 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
       alignment: AlignmentDirectional(0.0, 1.0),
       child: Container(
         decoration: BoxDecoration(
-          color: Color(0xFFEFF3ED),
-          boxShadow: [
-            BoxShadow(
-              blurRadius: 15.0,
-              color: Color(0x23272727),
-              offset: Offset(
-                0.0,
-                -5.0,
-              ),
-            )
-          ],
+          color: widget.resaltarCuenta
+              ? const Color(0xFFEDF4ED)
+              : const Color(0xFFEFF3ED),
+          boxShadow: widget.resaltarCuenta
+              ? null
+              : [
+                  BoxShadow(
+                    blurRadius: 15.0,
+                    color: Color(0x23272727),
+                    offset: Offset(
+                      0.0,
+                      -5.0,
+                    ),
+                  )
+                ],
           borderRadius: BorderRadius.only(
             bottomLeft: Radius.circular(0.0),
             bottomRight: Radius.circular(0.0),
@@ -302,7 +308,7 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
                       children: [
                         Builder(
                           builder: (context) {
-                            if (widget.index == 3) {
+                            if (widget.index == 3 || widget.resaltarCuenta) {
                               return Padding(
                                 padding: EdgeInsetsDirectional.fromSTEB(
                                     2.0, 5.0, 2.0, 0.0),
@@ -310,6 +316,10 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
                                   borderRadius: BorderRadius.circular(8.0),
                                   child: SvgPicture.asset(
                                     'assets/images/user.svg',
+                                    colorFilter: widget.resaltarCuenta
+                                        ? const ColorFilter.mode(
+                                            Color(0xFF006D5B), BlendMode.srcIn)
+                                        : null,
                                     width: 36.0,
                                     height: 36.0,
                                     fit: BoxFit.cover,
@@ -347,9 +357,14 @@ class _MenuBarWidgetState extends State<MenuBarWidget> {
                                         .bodyMedium
                                         .fontStyle,
                                   ),
+                                  color: widget.resaltarCuenta
+                                      ? const Color(0xFF006D5B)
+                                      : null,
                                   fontSize: 12.5,
                                   letterSpacing: 0.0,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: widget.resaltarCuenta
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                   fontStyle: FlutterFlowTheme.of(context)
                                       .bodyMedium
                                       .fontStyle,

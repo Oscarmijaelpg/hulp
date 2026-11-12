@@ -149,7 +149,6 @@ void main() {
       await tester.pumpWidget(MaterialApp(
           home: AgregarDireccionAgendaPage(
               ciudades: [bogota],
-              ciudadInicial: bogota,
               mapaBuilder: (_, abrir) => TextButton(
                   onPressed: abrir, child: const Text('Mapa de prueba')),
               guardar: (data) async {
@@ -198,7 +197,6 @@ void main() {
     await tester.pumpWidget(MaterialApp(
         home: AgregarDireccionAgendaPage(
             ciudades: [bogota, cali],
-            ciudadInicial: bogota,
             elegirUbicacion: (_) async => UbicacionElegida(
                 coordenadas: const Coordenadas(4.7, -74.07),
                 direccion: 'Calle del punto',

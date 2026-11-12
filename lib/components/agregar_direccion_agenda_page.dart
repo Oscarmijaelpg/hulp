@@ -14,7 +14,6 @@ class AgregarDireccionAgendaPage extends StatefulWidget {
       {super.key,
       required this.ciudades,
       required this.guardar,
-      this.ciudadInicial,
       this.elegirUbicacion,
       this.mapaBuilder,
       this.direccionInicial,
@@ -22,7 +21,6 @@ class AgregarDireccionAgendaPage extends StatefulWidget {
       this.usarAlGuardar = true});
   final List<CiudadesRow> ciudades;
   final Future<DireccionGuardada> Function(Map<String, dynamic>) guardar;
-  final CiudadesRow? ciudadInicial;
   final Future<UbicacionElegida?> Function(BuildContext)? elegirUbicacion;
   final Widget Function(Coordenadas?, VoidCallback)? mapaBuilder;
   final DireccionGuardada? direccionInicial;
@@ -53,7 +51,6 @@ class _AgregarDireccionAgendaPageState
   @override
   void initState() {
     super.initState();
-    _ciudad = widget.ciudadInicial;
     final inicial = widget.direccionInicial;
     if (inicial != null) {
       _tipo = inicial.tipo;
@@ -64,8 +61,15 @@ class _AgregarDireccionAgendaPageState
       _punto = inicial.punto;
       final ciudades = widget.ciudades.where((c) => c.id == inicial.ciudadId);
       _ciudad = ciudades.isEmpty ? null : ciudades.first;
+    } else {
+      _ciudad = widget.ciudades
+          .where((c) => c.activo && mismaCiudad(c.nombre, 'Bogotá D.C.'))
+          .firstOrNull;
+      if (_ciudad != null) {
+        _centro = const Coordenadas(4.7109, -74.0721);
+      }
     }
-    _centrarCiudad();
+    if (inicial != null) _centrarCiudad();
   }
 
   Future<void> _centrarCiudad() async {
